@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Remove-Item -Recurse -Force \"C:\\\\Users\\\\AntonyBailey\\\\Documents\\\\GitHub\\\\video-downloader\\\\core\\\\__pycache__\" -ErrorAction SilentlyContinue)",
+      "Bash(Remove-Item -Recurse -Force \"C:\\\\Users\\\\AntonyBailey\\\\Documents\\\\GitHub\\\\video-downloader\\\\__pycache__\" -ErrorAction SilentlyContinue)",
+      "Bash(Write-Host \"Cache cleared\")"
+    ]
+  }
+}
