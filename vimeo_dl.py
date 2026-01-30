@@ -23,7 +23,8 @@ console = Console()
 @click.option('--dry-run', is_flag=True, help='Show command without executing')
 @click.option('--list-formats', '-F', is_flag=True, help='List available formats without downloading')
 @click.option('--no-cookies', is_flag=True, help='Skip cookie extraction (for direct m3u8 URLs or public videos)')
-def main(url, password, output, name, browser, profile, aria2, fast, dry_run, list_formats, no_cookies):
+@click.option('--no-progress', is_flag=True, help='Disable rich progress bar, use yt-dlp native output')
+def main(url, password, output, name, browser, profile, aria2, fast, dry_run, list_formats, no_cookies, no_progress):
     """
     Download Vimeo videos with automatic type detection and authentication.
     
@@ -55,7 +56,7 @@ def main(url, password, output, name, browser, profile, aria2, fast, dry_run, li
     if list_formats:
         downloader.list_formats()
     else:
-        downloader.download(output, aria2, dry_run, fast, name)
+        downloader.download(output, aria2, dry_run, fast, name, show_progress=not no_progress)
 
 
 if __name__ == '__main__':

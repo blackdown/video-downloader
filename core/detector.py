@@ -16,13 +16,22 @@ class VimeoType(Enum):
     INVALID = "invalid"
 
 
+class VideoSource(Enum):
+    """Identifies the source platform of the video."""
+    VIMEO = "vimeo"
+    KINESCOPE = "kinescope"
+    DIRECT_STREAM = "direct_stream"
+    UNKNOWN = "unknown"
+
+
 class VimeoDetector:
-    """Detect Vimeo video type and extract metadata."""
+    """Detect video type and extract metadata from various platforms."""
 
     # URL patterns
     VIMEO_URL_PATTERN = r'vimeo\.com/(?:video/)?(\d+)(?:/([a-f0-9]+))?'
     PLAYER_URL_PATTERN = r'player\.vimeo\.com/video/(\d+)'
     CDN_URL_PATTERN = r'vimeocdn\.com/.+\.m3u8'
+    KINESCOPE_URL_PATTERN = r'kinescope\.io/([a-f0-9-]+)/media\.m3u8'
     
     def __init__(self, url: str, cookies=None):
         self.url = url
@@ -30,6 +39,7 @@ class VimeoDetector:
         self.video_id = None
         self.hash = None
         self.video_type = None
+        self.source = VideoSource.UNKNOWN
         
     def parse_url(self) -> Tuple[Optional[str], Optional[str]]:
         """Extract video ID and hash from URL."""
@@ -39,17 +49,28 @@ class VimeoDetector:
         if match:
             self.video_id = match.group(1)
             self.hash = match.group(2) if match.group(2) else None
+            self.source = VideoSource.VIMEO
             return self.video_id, self.hash
 
         # Try player.vimeo.com pattern
         match = re.search(self.PLAYER_URL_PATTERN, self.url)
         if match:
             self.video_id = match.group(1)
+            self.source = VideoSource.VIMEO
             return self.video_id, None
 
-        # Try direct CDN m3u8 URL
+        # Try Kinescope URL pattern
+        match = re.search(self.KINESCOPE_URL_PATTERN, self.url)
+        if match:
+            self.video_id = match.group(1)
+            self.source = VideoSource.KINESCOPE
+            self.video_type = VimeoType.PUBLIC
+            return self.video_id, None
+
+        # Try direct CDN m3u8 URL (Vimeo CDN)
         if re.search(self.CDN_URL_PATTERN, self.url):
             self.video_id = "direct_m3u8"
+            self.source = VideoSource.DIRECT_STREAM
             self.video_type = VimeoType.PUBLIC
             self.is_master_playlist = self._check_is_master_playlist()
             return self.video_id, None

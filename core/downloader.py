@@ -4,15 +4,111 @@ Download orchestration and execution.
 
 import subprocess
 import sys
+import re
 from typing import Optional
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn
-from .detector import VimeoDetector, VimeoType
+from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn, DownloadColumn, TransferSpeedColumn, TaskProgressColumn
+from rich.live import Live
+from rich.panel import Panel
+from rich.text import Text
+from .detector import VimeoDetector, VimeoType, VideoSource
 from .auth import CookieManager
 from .commands import CommandBuilder
 
 
 console = Console()
+
+
+class ProgressParser:
+    """Parse yt-dlp progress output and update rich progress bar."""
+
+    # Pattern for yt-dlp progress lines like:
+    # [download]  45.2% of 100.00MiB at 5.00MiB/s ETA 00:10
+    PROGRESS_PATTERN = re.compile(
+        r'\[download\]\s+(\d+\.?\d*)%\s+of\s+~?([\d.]+)(\w+)\s+at\s+([\d.]+)(\w+)/s\s+ETA\s+(\d+:\d+)'
+    )
+    # Pattern for fragment progress like:
+    # [download] Downloading item 5 of 10
+    FRAGMENT_PATTERN = re.compile(
+        r'\[download\]\s+Downloading\s+(?:item|video)\s+(\d+)\s+of\s+(\d+)'
+    )
+    # Pattern for completed download
+    COMPLETE_PATTERN = re.compile(
+        r'\[download\]\s+100%\s+of'
+    )
+    # Pattern for destination file
+    DESTINATION_PATTERN = re.compile(
+        r'\[download\]\s+Destination:\s+(.+)'
+    )
+    # Pattern for merging
+    MERGE_PATTERN = re.compile(
+        r'\[Merger\]|Merging formats'
+    )
+
+    def __init__(self):
+        self.total_size = 0
+        self.downloaded = 0
+        self.speed = ""
+        self.eta = ""
+        self.percent = 0.0
+        self.destination = ""
+        self.status = "Starting..."
+        self.is_complete = False
+
+    def parse_line(self, line: str) -> bool:
+        """Parse a line of yt-dlp output. Returns True if progress was updated."""
+        line = line.strip()
+        if not line:
+            return False
+
+        # Check for destination
+        dest_match = self.DESTINATION_PATTERN.search(line)
+        if dest_match:
+            self.destination = dest_match.group(1)
+            self.status = f"Downloading: {self.destination.split('/')[-1]}"
+            return True
+
+        # Check for standard progress
+        match = self.PROGRESS_PATTERN.search(line)
+        if match:
+            self.percent = float(match.group(1))
+            size_val = float(match.group(2))
+            size_unit = match.group(3)
+            speed_val = float(match.group(4))
+            speed_unit = match.group(5)
+            self.eta = match.group(6)
+
+            # Convert to bytes for display
+            self.total_size = self._to_bytes(size_val, size_unit)
+            self.downloaded = int(self.total_size * self.percent / 100)
+            self.speed = f"{speed_val:.1f} {speed_unit}/s"
+            self.status = "Downloading"
+            return True
+
+        # Check for completion
+        if self.COMPLETE_PATTERN.search(line):
+            self.percent = 100.0
+            self.is_complete = True
+            self.status = "Download complete"
+            return True
+
+        # Check for merging
+        if self.MERGE_PATTERN.search(line):
+            self.status = "Merging audio and video..."
+            return True
+
+        return False
+
+    def _to_bytes(self, value: float, unit: str) -> int:
+        """Convert size value to bytes."""
+        unit = unit.upper()
+        multipliers = {
+            'B': 1,
+            'KIB': 1024, 'KB': 1000,
+            'MIB': 1024**2, 'MB': 1000**2,
+            'GIB': 1024**3, 'GB': 1000**3,
+        }
+        return int(value * multipliers.get(unit, 1))
 
 
 class VimeoDownloader:
@@ -49,10 +145,15 @@ class VimeoDownloader:
         video_id, video_hash = self.detector.parse_url()
         
         if not video_id:
-            console.print("[red]✗ Invalid Vimeo URL[/red]")
+            console.print("[red]✗ Invalid URL - not a recognized Vimeo or Kinescope URL[/red]")
             return False
 
-        if video_id == "direct_m3u8":
+        source = self.detector.source
+
+        # Display detection results based on source
+        if source == VideoSource.KINESCOPE:
+            console.print(f"[green]✓ Kinescope stream detected[/green] (ID: {video_id[:8]}...)")
+        elif source == VideoSource.DIRECT_STREAM:
             console.print("[green]✓ Direct m3u8 stream URL detected[/green]")
             # Check if this is a video-only stream
             if self.detector.is_video_only_stream():
@@ -64,9 +165,9 @@ class VimeoDownloader:
             console.print(f"[green]✓ Video ID:[/green] {video_id}")
             if video_hash:
                 console.print(f"[green]✓ Video hash:[/green] {video_hash}")
-        
-        # Detect type (skip for direct m3u8 URLs)
-        if video_id == "direct_m3u8":
+
+        # Detect type (skip for direct streams)
+        if source in (VideoSource.KINESCOPE, VideoSource.DIRECT_STREAM):
             video_type = VimeoType.PUBLIC
         else:
             video_type = self.detector.detect_type()
@@ -76,7 +177,8 @@ class VimeoDownloader:
         cookie_string = None if self.skip_cookies else self.cookie_manager.get_cookie_string_for_ytdlp()
         self.command_builder = CommandBuilder(
             video_id, video_hash, video_type,
-            self.password, cookie_string, original_url=self.url
+            self.password, cookie_string, original_url=self.url,
+            source=source
         )
         
         # Show warnings
@@ -93,7 +195,8 @@ class VimeoDownloader:
         return True
     
     def download(self, output_path: str = ".", use_aria2: bool = False,
-                 dry_run: bool = False, fast: bool = False, filename: str = None) -> bool:
+                 dry_run: bool = False, fast: bool = False, filename: str = None,
+                 show_progress: bool = True) -> bool:
         """Execute the download."""
 
         if not self.command_builder:
@@ -107,10 +210,16 @@ class VimeoDownloader:
             console.print("\n[cyan]Command that would be executed:[/cyan]")
             console.print(self.command_builder.get_command_string(False, output_path, use_aria2, fast, filename))
             return True
-        
-        # Execute
+
         console.print("\n[cyan]Starting download...[/cyan]\n")
-        
+
+        if show_progress:
+            return self._download_with_progress(cmd)
+        else:
+            return self._download_simple(cmd)
+
+    def _download_simple(self, cmd: list) -> bool:
+        """Execute download without rich progress (fallback)."""
         try:
             result = subprocess.run(cmd, check=True)
             console.print("\n[green]✓ Download completed successfully![/green]")
@@ -120,6 +229,67 @@ class VimeoDownloader:
             return False
         except FileNotFoundError:
             console.print("[red]✗ yt-dlp module not found. Please install it: pip install yt-dlp[/red]")
+            return False
+
+    def _download_with_progress(self, cmd: list) -> bool:
+        """Execute download with rich progress bar."""
+        parser = ProgressParser()
+
+        try:
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                encoding='utf-8',
+                errors='replace'
+            )
+
+            with Progress(
+                TextColumn("[bold blue]{task.description}"),
+                BarColumn(bar_width=40),
+                TaskProgressColumn(),
+                DownloadColumn(),
+                TransferSpeedColumn(),
+                TimeRemainingColumn(),
+                console=console,
+                transient=False,
+            ) as progress:
+                task = progress.add_task("Downloading...", total=100)
+
+                for line in process.stdout:
+                    if parser.parse_line(line):
+                        progress.update(
+                            task,
+                            completed=parser.percent,
+                            description=parser.status[:30] + "..." if len(parser.status) > 30 else parser.status
+                        )
+
+                    # Also show non-progress lines that might be important
+                    if not parser.PROGRESS_PATTERN.search(line):
+                        stripped = line.strip()
+                        if stripped and not stripped.startswith('[download]'):
+                            # Show important messages outside progress bar
+                            if any(x in stripped.lower() for x in ['error', 'warning', 'merger', 'extracting']):
+                                console.print(f"[dim]{stripped}[/dim]")
+
+                process.wait()
+
+            if process.returncode == 0:
+                console.print("\n[green]✓ Download completed successfully![/green]")
+                if parser.destination:
+                    console.print(f"[dim]Saved to: {parser.destination}[/dim]")
+                return True
+            else:
+                console.print(f"\n[red]✗ Download failed with error code {process.returncode}[/red]")
+                return False
+
+        except FileNotFoundError:
+            console.print("[red]✗ yt-dlp module not found. Please install it: pip install yt-dlp[/red]")
+            return False
+        except Exception as e:
+            console.print(f"[red]✗ Download error: {e}[/red]")
             return False
 
     def list_formats(self) -> bool:

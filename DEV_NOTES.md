@@ -37,6 +37,8 @@ Always use the **Master URL**. Tool now warns if video-only URL detected.
 - [x] ffmpeg downloader for m3u8 streams
 - [x] **Master playlist checker with warning**
 - [x] **Clean progress output** (suppressed ffmpeg HTTP noise)
+- [x] **Kinescope support** (`kinescope.io/{id}/media.m3u8`)
+- [x] **Rich progress bar** with speed, ETA, percentage (`--no-progress` to disable)
 
 ## ffmpeg Installation
 Path: `C:\ffmpeg\ffmpeg-8.0.1-essentials_build\bin`
@@ -61,6 +63,7 @@ Options:
   --dry-run             Show command without executing
   -F, --list-formats    List available formats
   --no-cookies          Skip cookie extraction
+  --no-progress         Disable rich progress bar
 ```
 
 ## File Structure
@@ -78,19 +81,19 @@ video-downloader/
 
 ## Pending Features
 
-### Kinescope Support
-- URL pattern: `kinescope.io/{id}/media.m3u8?quality=...&type=video&sign=...&expires=...`
-- Add to detector.py:
-  ```python
-  KINESCOPE_URL_PATTERN = r'kinescope\.io/[a-f0-9-]+/media\.m3u8'
-  ```
-
 ### Other Ideas
 - Auto-detect and fetch master playlist from video-only URL
 - `--video-url` + `--audio-url` option for manual merging
-- Progress bar using rich library instead of yt-dlp native
 
 ## Code Changes Log
+
+### Session 2026-01-30
+1. Added Kinescope support with URL pattern `kinescope\.io/[a-f0-9-]+/media\.m3u8`
+2. Added `VideoSource` enum to track source platform (VIMEO, KINESCOPE, DIRECT_STREAM)
+3. Refactored `CommandBuilder` to use `is_direct_stream()` instead of checking `video_id == "direct_m3u8"`
+4. Added rich Progress bar with speed, ETA, and percentage display
+5. Added `ProgressParser` class to parse yt-dlp output
+6. Added `--no-progress` flag to use yt-dlp native output instead
 
 ### Session 2026-01-29
 1. Added `skip_cookies` parameter to VimeoDownloader

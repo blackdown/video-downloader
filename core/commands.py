@@ -4,7 +4,7 @@ Command construction for different download methods.
 
 import sys
 from typing import List, Optional
-from .detector import VimeoType
+from .detector import VimeoType, VideoSource
 
 
 class CommandBuilder:
@@ -12,22 +12,28 @@ class CommandBuilder:
 
     def __init__(self, video_id: str, video_hash: Optional[str],
                  video_type: VimeoType, password: Optional[str] = None,
-                 cookie_string: Optional[str] = None, original_url: Optional[str] = None):
+                 cookie_string: Optional[str] = None, original_url: Optional[str] = None,
+                 source: VideoSource = VideoSource.VIMEO):
         self.video_id = video_id
         self.video_hash = video_hash
         self.video_type = video_type
         self.password = password
         self.cookie_string = cookie_string
         self.original_url = original_url
+        self.source = source
 
     def get_url(self) -> str:
         """Get the appropriate URL for download."""
-        # For direct m3u8 URLs, use the original URL
-        if self.video_id == "direct_m3u8" and self.original_url:
+        # For direct stream URLs (m3u8, Kinescope), use the original URL
+        if self.source in (VideoSource.DIRECT_STREAM, VideoSource.KINESCOPE) and self.original_url:
             return self.original_url
         if self.video_hash:
             return f"https://vimeo.com/{self.video_id}/{self.video_hash}"
         return f"https://vimeo.com/{self.video_id}"
+
+    def is_direct_stream(self) -> bool:
+        """Check if this is a direct stream URL (m3u8, Kinescope, etc.)."""
+        return self.source in (VideoSource.DIRECT_STREAM, VideoSource.KINESCOPE)
     
     def build_ytdlp_command(self, output_path: str = ".", use_aria2: bool = False, fast: bool = False, filename: str = None) -> List[str]:
         """Build yt-dlp command with appropriate flags."""
@@ -56,13 +62,13 @@ class CommandBuilder:
         if self.password and self.video_type == VimeoType.PASSWORD_PROTECTED:
             cmd.extend(["--video-password", self.password])
 
-        # Add referer (skip for direct m3u8 URLs)
-        if self.video_id != "direct_m3u8":
+        # Add referer (skip for direct stream URLs)
+        if not self.is_direct_stream():
             cmd.extend(["--referer", referer])
-        
+
         # Quality and format selection
-        if self.video_id == "direct_m3u8":
-            # For direct m3u8, let yt-dlp figure it out or use ffmpeg
+        if self.is_direct_stream():
+            # For direct streams (m3u8, Kinescope), let yt-dlp figure it out
             cmd.extend([
                 "--merge-output-format", "mp4",
             ])
@@ -74,14 +80,14 @@ class CommandBuilder:
                 "--merge-output-format", "mp4",
                 "--postprocessor-args", "ffmpeg:-movflags +faststart"
             ])
-        
+
         # Downloader selection
         if use_aria2:
             cmd.extend([
                 "--downloader", "aria2c",
                 "--downloader-args", "aria2c:-x 16 -s 16 -k 1M"
             ])
-        elif self.video_id == "direct_m3u8":
+        elif self.is_direct_stream():
             # Use ffmpeg for m3u8 streams - better audio handling
             # -loglevel warning suppresses the verbose HTTP request output
             cmd.extend([
@@ -90,16 +96,17 @@ class CommandBuilder:
             ])
         else:
             cmd.extend(["--downloader", "native"])
-        
+
         # Output path and filename
         if filename:
             # User specified filename
             cmd.extend(["-o", f"{output_path}/{filename}.%(ext)s"])
-        elif self.video_id == "direct_m3u8":
-            # Direct m3u8 - use timestamp-based name
+        elif self.is_direct_stream():
+            # Direct stream - use timestamp-based name with source prefix
             from datetime import datetime
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            cmd.extend(["-o", f"{output_path}/vimeo_{timestamp}.%(ext)s"])
+            prefix = self.source.value if self.source != VideoSource.DIRECT_STREAM else "stream"
+            cmd.extend(["-o", f"{output_path}/{prefix}_{timestamp}.%(ext)s"])
         else:
             # Normal Vimeo URL - use title or video ID
             cmd.extend(["-o", f"{output_path}/%(title)s [%(id)s].%(ext)s"])
