@@ -8,3 +8,9 @@ DEV_NOTES.md
 .env
 core/__pycache__/
 core/__pycache__/*
+
+# PyInstaller build artifacts
+build/
+dist/
+*.spec
+nul
