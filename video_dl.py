@@ -74,13 +74,13 @@ def main(url, batch_file, password, output, name, browser, profile, aria2, fast,
 
     Examples:
 
-        python video_dl.py https://vimeo.com/123456789
+        video_dl https://vimeo.com/123456789
 
-        python video_dl.py https://www.youtube.com/watch?v=dQw4w9WgXcQ
+        video_dl https://www.youtube.com/watch?v=dQw4w9WgXcQ --fast
 
-        python video_dl.py --batch urls.txt --no-cookies
+        video_dl --batch urls.txt --no-cookies
 
-        python video_dl.py https://vimeo.com/123456789/abcdef123 --password mypass
+        video_dl "https://example.com/video.m3u8" --no-cookies -n "My Video"
     """
 
     console.print("[bold cyan]Video Downloader[/bold cyan]\n")
