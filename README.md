@@ -26,49 +26,62 @@ Multi-platform video downloader with automatic detection, batch downloads, and r
 
 ## Installation
 
-### 1. Install Python dependencies
+### Windows: Standalone Executable
 
-```bash
-pip install -r requirements.txt
-```
+Download `video_dl.exe` from the [Releases](../../releases) page. No Python required.
 
-### 2. Install external tools
-
-**Windows:**
+You still need to install the external tools:
 ```powershell
-pip install yt-dlp
+winget install yt-dlp
 winget install ffmpeg
 ```
 
+### macOS / Linux: Run from Source
+
+1. Install external tools:
+
 **macOS:**
 ```bash
-brew install yt-dlp ffmpeg
+brew install yt-dlp ffmpeg python
 ```
 
 **Linux:**
 ```bash
-sudo apt install yt-dlp ffmpeg
+sudo apt install yt-dlp ffmpeg python3 python3-pip
+```
+
+2. Install Python dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+3. Run with Python:
+```bash
+python video_dl.py "https://..." --no-cookies
 ```
 
 ## Usage
+
+**Windows:** Use `video_dl.exe`
+**macOS/Linux:** Use `python video_dl.py`
 
 ### Single Video Download
 
 ```bash
 # YouTube
-python video_dl.py "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+video_dl.exe "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 
 # Vimeo (public)
-python video_dl.py https://vimeo.com/123456789
+video_dl.exe https://vimeo.com/123456789
 
 # Vimeo (password-protected)
-python video_dl.py https://vimeo.com/123456789 --password mypass
+video_dl.exe https://vimeo.com/123456789 --password mypass
 
 # Direct stream URL
-python video_dl.py "https://example.com/video.m3u8" --no-cookies
+video_dl.exe "https://example.com/video.m3u8" --no-cookies
 
 # Fast mode (32 concurrent fragments)
-python video_dl.py "https://..." --fast
+video_dl.exe "https://..." --fast
 ```
 
 ### Batch Download
@@ -87,13 +100,13 @@ https://kinescope.io/abc.../media.m3u8?...
 
 Download all:
 ```bash
-python video_dl.py --batch urls.txt --no-cookies --fast
+video_dl.exe --batch urls.txt --no-cookies --fast
 ```
 
 ### All Options
 
 ```
-Usage: video_dl.py [OPTIONS] [URL]
+Usage: video_dl.exe [OPTIONS] [URL]
 
 Options:
   -B, --batch TEXT       Batch file with URLs (one per line)
@@ -145,7 +158,7 @@ You're using a video-only stream URL. Use the master playlist URL instead. See s
 ### "Could not extract cookies"
 Use `--no-cookies` for direct stream URLs:
 ```bash
-python video_dl.py "YOUR_URL" --no-cookies
+video_dl.exe "YOUR_URL" --no-cookies
 ```
 
 ### Progress bar not updating
@@ -153,6 +166,17 @@ Try `--no-progress` to see raw yt-dlp output and diagnose issues.
 
 ### "URL expired" or "403 Forbidden"
 Direct stream URLs expire. Get a fresh URL from the source.
+
+## Building from Source
+
+To build the standalone executable:
+
+```bash
+pip install pyinstaller
+pyinstaller --onefile --name video_dl --console video_dl.py
+```
+
+The executable will be created in the `dist/` folder.
 
 ## Project Structure
 
