@@ -189,7 +189,6 @@ video-downloader/
 │   ├── commands.py      # yt-dlp command building
 │   └── auth.py          # Cookie handling
 ├── requirements.txt
-├── DEV_NOTES.md         # Development notes
 └── README.md
 ```
 
