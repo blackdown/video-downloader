@@ -56,19 +56,19 @@ sudo apt install yt-dlp ffmpeg
 
 ```bash
 # YouTube
-python vimeo_dl.py "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+python video_dl.py "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 
 # Vimeo (public)
-python vimeo_dl.py https://vimeo.com/123456789
+python video_dl.py https://vimeo.com/123456789
 
 # Vimeo (password-protected)
-python vimeo_dl.py https://vimeo.com/123456789 --password mypass
+python video_dl.py https://vimeo.com/123456789 --password mypass
 
 # Direct stream URL
-python vimeo_dl.py "https://example.com/video.m3u8" --no-cookies
+python video_dl.py "https://example.com/video.m3u8" --no-cookies
 
 # Fast mode (32 concurrent fragments)
-python vimeo_dl.py "https://..." --fast
+python video_dl.py "https://..." --fast
 ```
 
 ### Batch Download
@@ -87,13 +87,13 @@ https://kinescope.io/abc.../media.m3u8?...
 
 Download all:
 ```bash
-python vimeo_dl.py --batch urls.txt --no-cookies --fast
+python video_dl.py --batch urls.txt --no-cookies --fast
 ```
 
 ### All Options
 
 ```
-Usage: vimeo_dl.py [OPTIONS] [URL]
+Usage: video_dl.py [OPTIONS] [URL]
 
 Options:
   -B, --batch TEXT       Batch file with URLs (one per line)
@@ -145,7 +145,7 @@ You're using a video-only stream URL. Use the master playlist URL instead. See s
 ### "Could not extract cookies"
 Use `--no-cookies` for direct stream URLs:
 ```bash
-python vimeo_dl.py "YOUR_URL" --no-cookies
+python video_dl.py "YOUR_URL" --no-cookies
 ```
 
 ### Progress bar not updating
@@ -158,7 +158,7 @@ Direct stream URLs expire. Get a fresh URL from the source.
 
 ```
 video-downloader/
-├── vimeo_dl.py          # Main CLI entry point
+├── video_dl.py          # Main CLI entry point
 ├── core/
 │   ├── detector.py      # URL/platform detection
 │   ├── downloader.py    # Download orchestration
