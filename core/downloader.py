@@ -49,7 +49,13 @@ class ProgressParser:
         r'\[Merger\]|Merging formats'
     )
 
-    def __init__(self):
+    def __init__(self, progress_callback=None):
+        """
+        Initialize the progress parser.
+
+        Args:
+            progress_callback: Optional callable(percent, speed, eta, status) for GUI updates
+        """
         self.total_size = 0
         self.downloaded = 0
         self.speed = ""
@@ -58,6 +64,7 @@ class ProgressParser:
         self.destination = ""
         self.status = "Starting..."
         self.is_complete = False
+        self._progress_callback = progress_callback
 
     def parse_line(self, line: str) -> bool:
         """Parse a line of yt-dlp output. Returns True if progress was updated."""
@@ -65,59 +72,71 @@ class ProgressParser:
         if not line:
             return False
 
+        updated = False
+
         # Check for destination
         dest_match = self.DESTINATION_PATTERN.search(line)
         if dest_match:
             self.destination = dest_match.group(1)
             self.status = f"Downloading: {self.destination.split('/')[-1]}"
-            return True
+            updated = True
 
         # Check for standard progress (full format with size/speed/eta)
-        match = self.PROGRESS_PATTERN.search(line)
-        if match:
-            self.percent = float(match.group(1))
-            size_val = float(match.group(2))
-            size_unit = match.group(3)
-            speed_val = float(match.group(4))
-            speed_unit = match.group(5)
-            self.eta = match.group(6)
+        if not updated:
+            match = self.PROGRESS_PATTERN.search(line)
+            if match:
+                self.percent = float(match.group(1))
+                size_val = float(match.group(2))
+                size_unit = match.group(3)
+                speed_val = float(match.group(4))
+                speed_unit = match.group(5)
+                self.eta = match.group(6)
 
-            # Convert to bytes for display
-            self.total_size = self._to_bytes(size_val, size_unit)
-            self.downloaded = int(self.total_size * self.percent / 100)
-            self.speed = f"{speed_val:.1f} {speed_unit}/s"
-            self.status = "Downloading"
-            return True
+                # Convert to bytes for display
+                self.total_size = self._to_bytes(size_val, size_unit)
+                self.downloaded = int(self.total_size * self.percent / 100)
+                self.speed = f"{speed_val:.1f} {speed_unit}/s"
+                self.status = "Downloading"
+                updated = True
 
         # Check for fragment progress (common with YouTube DASH)
-        frag_match = self.FRAGMENT_PATTERN.search(line)
-        if frag_match:
-            current = int(frag_match.group(1))
-            total = int(frag_match.group(2))
-            self.percent = (current / total) * 100
-            self.status = f"Fragment {current}/{total}"
-            return True
+        if not updated:
+            frag_match = self.FRAGMENT_PATTERN.search(line)
+            if frag_match:
+                current = int(frag_match.group(1))
+                total = int(frag_match.group(2))
+                self.percent = (current / total) * 100
+                self.status = f"Fragment {current}/{total}"
+                updated = True
 
         # Fallback: simple percentage pattern
-        simple_match = self.SIMPLE_PROGRESS_PATTERN.search(line)
-        if simple_match:
-            self.percent = float(simple_match.group(1))
-            self.status = "Downloading"
-            return True
+        if not updated:
+            simple_match = self.SIMPLE_PROGRESS_PATTERN.search(line)
+            if simple_match:
+                self.percent = float(simple_match.group(1))
+                self.status = "Downloading"
+                updated = True
 
         # Check for completion
-        if self.COMPLETE_PATTERN.search(line):
+        if not updated and self.COMPLETE_PATTERN.search(line):
             self.percent = 100.0
             self.is_complete = True
             self.status = "Download complete"
-            return True
+            updated = True
 
         # Check for merging
-        if self.MERGE_PATTERN.search(line):
+        if not updated and self.MERGE_PATTERN.search(line):
             self.status = "Merging audio and video..."
-            return True
+            updated = True
 
-        return False
+        # Invoke callback if we have one and something changed
+        if updated and self._progress_callback:
+            try:
+                self._progress_callback(self.percent, self.speed, self.eta, self.status)
+            except Exception:
+                pass  # Don't let callback errors break parsing
+
+        return updated
 
     def _to_bytes(self, value: float, unit: str) -> int:
         """Convert size value to bytes."""

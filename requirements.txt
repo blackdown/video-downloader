@@ -4,3 +4,4 @@ requests>=2.31.0
 browser-cookie3>=0.19.1
 click>=8.1.0
 rich>=13.0.0
+customtkinter>=5.2.0
