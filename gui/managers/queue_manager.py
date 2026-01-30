@@ -24,7 +24,7 @@ class QueueManager:
         self._workers: Dict[str, DownloadWorker] = {}
         self._order: List[str] = []  # Maintains insertion order
 
-        self._is_running = False
+        self._is_running = True  # Auto-start downloads when items are added
         self._max_concurrent = 1  # Download one at a time for now
 
         # Register event handlers
@@ -41,15 +41,27 @@ class QueueManager:
         """Set callback to be called when an item is updated."""
         self._on_item_updated = callback
 
-    def add_url(self, url: str) -> QueueItem:
-        """Add a URL to the queue."""
+    def add_url(self, url: str, filename: Optional[str] = None) -> QueueItem:
+        """Add a URL to the queue and start analyzing it."""
         url = url.strip()
         if not url:
             raise ValueError("URL cannot be empty")
 
-        item = QueueItem(url=url)
+        # Clean up filename (strip whitespace, remove extension if provided)
+        if filename:
+            filename = filename.strip()
+            # Remove common video extensions if user included them
+            for ext in (".mp4", ".mkv", ".webm", ".avi", ".mov"):
+                if filename.lower().endswith(ext):
+                    filename = filename[:-len(ext)]
+            filename = filename if filename else None
+
+        item = QueueItem(url=url, custom_filename=filename)
         self._items[item.id] = item
         self._order.append(item.id)
+
+        # Auto-start analysis
+        self._start_analysis(item)
 
         return item
 
@@ -94,8 +106,16 @@ class QueueManager:
         return [self._items[id] for id in self._order if id in self._items]
 
     def start(self) -> None:
-        """Start processing the queue."""
+        """Start downloading READY and CANCELLED items in the queue."""
         self._is_running = True
+
+        # Reset CANCELLED items to READY so they can be restarted
+        for item in self._items.values():
+            if item.status == QueueStatus.CANCELLED:
+                item.status = QueueStatus.READY
+                item.progress = 0.0
+                self._notify_item_updated(item)
+
         self._start_next_downloads()
 
     def pause(self) -> None:
@@ -124,37 +144,54 @@ class QueueManager:
             "total": len(self._items),
             "pending": statuses.count(QueueStatus.PENDING),
             "analyzing": statuses.count(QueueStatus.ANALYZING),
+            "ready": statuses.count(QueueStatus.READY),
             "downloading": statuses.count(QueueStatus.DOWNLOADING),
             "completed": statuses.count(QueueStatus.COMPLETED),
             "error": statuses.count(QueueStatus.ERROR),
         }
 
+    def _start_analysis(self, item: QueueItem) -> None:
+        """Start analyzing a URL (without downloading)."""
+        worker = DownloadWorker(item, self.settings, self.events, analyze_only=True)
+        self._workers[item.id] = worker
+        worker.start()
+
     def _start_next_downloads(self) -> None:
-        """Start the next pending downloads if capacity allows."""
+        """Start the next READY downloads if capacity allows."""
         if not self._is_running:
             return
 
-        active_count = sum(1 for w in self._workers.values() if w.is_running())
+        # Count active downloads (not analyzers)
+        active_count = sum(
+            1 for item_id, w in self._workers.items()
+            if w.is_running() and self._items.get(item_id, QueueItem("")).status == QueueStatus.DOWNLOADING
+        )
         available_slots = self._max_concurrent - active_count
 
         if available_slots <= 0:
             return
 
-        # Find pending items
+        # Find READY items to download
         for item_id in self._order:
             if available_slots <= 0:
                 break
 
             item = self._items.get(item_id)
-            if item and item.status == QueueStatus.PENDING:
+            if item and item.status == QueueStatus.READY:
                 self._start_download(item)
                 available_slots -= 1
 
     def _start_download(self, item: QueueItem) -> None:
-        """Start downloading a specific item."""
-        worker = DownloadWorker(item, self.settings, self.events)
-        self._workers[item.id] = worker
-        worker.start()
+        """Start downloading a READY item."""
+        worker = self._workers.get(item.id)
+        if worker and worker._downloader:
+            # Use existing worker with cached downloader
+            worker.start_download()
+        else:
+            # Create new worker (full analyze + download)
+            worker = DownloadWorker(item, self.settings, self.events, analyze_only=False)
+            self._workers[item.id] = worker
+            worker.start()
 
     def _notify_item_updated(self, item: QueueItem) -> None:
         """Notify UI of item update."""
@@ -171,6 +208,10 @@ class QueueManager:
 
             # If completed/error/cancelled, try to start next download
             if event.data in (QueueStatus.COMPLETED, QueueStatus.ERROR, QueueStatus.CANCELLED):
+                self._start_next_downloads()
+
+            # If READY and queue is running, auto-start download
+            if event.data == QueueStatus.READY and self._is_running:
                 self._start_next_downloads()
 
     def _on_progress_update(self, event: GUIEvent) -> None:

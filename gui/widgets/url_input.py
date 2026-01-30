@@ -9,13 +9,13 @@ from typing import Callable, Optional
 
 class URLInput(ctk.CTkFrame):
     """
-    URL input widget with entry field and batch file button.
+    URL input widget with entry field, filename field, and batch file button.
     """
 
     def __init__(
         self,
         master,
-        on_url_submit: Callable[[str], None],
+        on_url_submit: Callable[[str, Optional[str]], None],
         on_batch_file: Callable[[str], None],
         **kwargs
     ):
@@ -36,6 +36,16 @@ class URLInput(ctk.CTkFrame):
         )
         self.url_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
         self.url_entry.bind("<Return>", self._on_entry_submit)
+
+        # Filename entry (optional)
+        self.filename_entry = ctk.CTkEntry(
+            self,
+            placeholder_text="Filename (optional)",
+            width=150,
+            height=36,
+        )
+        self.filename_entry.pack(side="left", padx=(0, 8))
+        self.filename_entry.bind("<Return>", self._on_entry_submit)
 
         # Add button
         self.add_button = ctk.CTkButton(
@@ -67,8 +77,10 @@ class URLInput(ctk.CTkFrame):
         """Handle Add button click."""
         url = self.url_entry.get().strip()
         if url:
-            self._on_url_submit(url)
+            filename = self.filename_entry.get().strip() or None
+            self._on_url_submit(url, filename)
             self.url_entry.delete(0, "end")
+            self.filename_entry.delete(0, "end")
 
     def _on_batch_clicked(self) -> None:
         """Handle Batch File button click."""
@@ -90,5 +102,6 @@ class URLInput(ctk.CTkFrame):
         """Enable or disable the input."""
         state = "normal" if enabled else "disabled"
         self.url_entry.configure(state=state)
+        self.filename_entry.configure(state=state)
         self.add_button.configure(state=state)
         self.batch_button.configure(state=state)

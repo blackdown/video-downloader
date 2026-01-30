@@ -44,9 +44,6 @@ class SettingsPanel(ctk.CTkFrame):
         # Options section
         self._create_options_section(row=4)
 
-        # Browser section
-        self._create_browser_section(row=8)
-
     def _create_folder_section(self, label: str, setting_key: str, row: int) -> None:
         """Create a folder selection section."""
         label_widget = ctk.CTkLabel(
@@ -86,23 +83,27 @@ class SettingsPanel(ctk.CTkFrame):
 
         self._quality_var = ctk.StringVar(value="max")
 
+        # Frame to hold radio buttons side by side
+        quality_frame = ctk.CTkFrame(self, fg_color="transparent")
+        quality_frame.grid(row=row + 1, column=0, sticky="w", pady=2)
+
         max_radio = ctk.CTkRadioButton(
-            self,
-            text="Max Quality",
+            quality_frame,
+            text="Max",
             variable=self._quality_var,
             value="max",
             command=self._on_quality_changed,
         )
-        max_radio.grid(row=row + 1, column=0, sticky="w", pady=2)
+        max_radio.pack(side="left", padx=(0, 12))
 
         cap_radio = ctk.CTkRadioButton(
-            self,
-            text="Cap at 1080p",
+            quality_frame,
+            text="1080p",
             variable=self._quality_var,
             value="1080p",
             command=self._on_quality_changed,
         )
-        cap_radio.grid(row=row + 2, column=0, sticky="w", pady=2)
+        cap_radio.pack(side="left")
 
     def _create_options_section(self, row: int) -> None:
         """Create download options section."""
@@ -122,42 +123,32 @@ class SettingsPanel(ctk.CTkFrame):
         )
         fast_check.grid(row=row + 1, column=0, sticky="w", pady=2)
 
-        self._aria2_var = ctk.BooleanVar()
-        aria2_check = ctk.CTkCheckBox(
-            self,
-            text="Use aria2c",
-            variable=self._aria2_var,
-            command=self._on_option_changed,
-        )
-        aria2_check.grid(row=row + 2, column=0, sticky="w", pady=2)
-
-        self._no_cookies_var = ctk.BooleanVar()
+        # Use cookies checkbox (inverted - checked means use cookies)
+        self._use_cookies_var = ctk.BooleanVar()
         cookies_check = ctk.CTkCheckBox(
             self,
-            text="No cookies",
-            variable=self._no_cookies_var,
+            text="Use browser cookies",
+            variable=self._use_cookies_var,
             command=self._on_option_changed,
         )
-        cookies_check.grid(row=row + 3, column=0, sticky="w", pady=2)
+        cookies_check.grid(row=row + 2, column=0, sticky="w", pady=2)
 
-    def _create_browser_section(self, row: int) -> None:
-        """Create browser selection section."""
-        label = ctk.CTkLabel(
-            self,
-            text="Browser:",
-            font=ctk.CTkFont(size=12, weight="bold"),
-        )
-        label.grid(row=row, column=0, sticky="w", pady=(10, 2))
+        # Browser selection
+        browser_frame = ctk.CTkFrame(self, fg_color="transparent")
+        browser_frame.grid(row=row + 3, column=0, sticky="w", pady=(8, 2))
+
+        browser_label = ctk.CTkLabel(browser_frame, text="Browser:")
+        browser_label.pack(side="left", padx=(0, 8))
 
         self._browser_var = ctk.StringVar(value="chrome")
-        browser_menu = ctk.CTkOptionMenu(
-            self,
+        browser_dropdown = ctk.CTkOptionMenu(
+            browser_frame,
             variable=self._browser_var,
             values=["chrome", "firefox", "edge"],
-            command=self._on_browser_changed,
-            width=150,
+            width=100,
+            command=lambda _: self._on_option_changed(),
         )
-        browser_menu.grid(row=row + 1, column=0, sticky="w", pady=2)
+        browser_dropdown.pack(side="left")
 
     def _browse_folder(self, entry: ctk.CTkEntry, setting_key: str) -> None:
         """Open folder browser dialog."""
@@ -179,13 +170,8 @@ class SettingsPanel(ctk.CTkFrame):
     def _on_option_changed(self) -> None:
         """Handle option checkbox change."""
         self.settings.fast_mode = self._fast_var.get()
-        self.settings.use_aria2 = self._aria2_var.get()
-        self.settings.no_cookies = self._no_cookies_var.get()
-        self._notify_changed()
-
-    def _on_browser_changed(self, value: str) -> None:
-        """Handle browser selection change."""
-        self.settings.browser = value
+        self.settings.no_cookies = not self._use_cookies_var.get()  # Inverted
+        self.settings.browser = self._browser_var.get()
         self._notify_changed()
 
     def _notify_changed(self) -> None:
@@ -204,10 +190,7 @@ class SettingsPanel(ctk.CTkFrame):
 
         # Options
         self._fast_var.set(self.settings.fast_mode)
-        self._aria2_var.set(self.settings.use_aria2)
-        self._no_cookies_var.set(self.settings.no_cookies)
-
-        # Browser
+        self._use_cookies_var.set(not self.settings.no_cookies)  # Inverted
         self._browser_var.set(self.settings.browser)
 
     def get_settings(self) -> AppSettings:

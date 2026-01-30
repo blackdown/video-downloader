@@ -1,0 +1,13 @@
+{
+  "output_folder": "//TRUENAS/Tutorials",
+  "temp_folder": ".downloading",
+  "quality_cap_1080p": true,
+  "fast_mode": true,
+  "use_aria2": false,
+  "no_cookies": true,
+  "browser": "chrome",
+  "browser_profile": null,
+  "window_width": 3435,
+  "window_height": 2289,
+  "theme": "dark"
+}

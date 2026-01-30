@@ -4,7 +4,7 @@ Vimeo URL detection and video type classification.
 
 import re
 import requests
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List
 from enum import Enum
 
 
@@ -23,6 +23,7 @@ class VideoSource(Enum):
     KINESCOPE = "kinescope"
     GETCOURSE = "getcourse"
     DIRECT_STREAM = "direct_stream"
+    WEBPAGE = "webpage"  # Generic webpage that may contain embedded videos
     UNKNOWN = "unknown"
 
 
@@ -116,7 +117,7 @@ class VimeoDetector:
     def is_video_only_stream(self) -> bool:
         """Returns True if this appears to be a video-only stream URL."""
         if not hasattr(self, 'is_master_playlist'):
-            self._check_is_master_playlist()
+            self.is_master_playlist = self._check_is_master_playlist()
         return not self.is_master_playlist
     
     def detect_type(self) -> VimeoType:
@@ -176,3 +177,139 @@ class VimeoDetector:
     def get_player_url(self) -> str:
         """Get the player embed URL."""
         return f"https://player.vimeo.com/video/{self.video_id}"
+
+
+class WebpageScraper:
+    """Scrape webpages to find embedded video URLs."""
+
+    # Patterns to find video URLs in HTML/JS
+    PATTERNS = [
+        # GetCourse: vh-api-X-XX.gceuproxy.com/api/playlist/master/ID1/ID2
+        (r'(https?://[a-z0-9-]+\.gceuproxy\.com/api/playlist/master/[a-f0-9]+/[a-f0-9]+[^"\'\s]*)', VideoSource.GETCOURSE),
+        # Kinescope: kinescope.io/ID/media.m3u8
+        (r'(https?://kinescope\.io/[a-f0-9-]+/media\.m3u8[^"\'\s]*)', VideoSource.KINESCOPE),
+        # Vimeo player iframe
+        (r'(https?://player\.vimeo\.com/video/\d+[^"\'\s]*)', VideoSource.VIMEO),
+        # Vimeo CDN m3u8
+        (r'(https?://[a-z0-9-]+\.vimeocdn\.com/[^"\'\s]+\.m3u8[^"\'\s]*)', VideoSource.DIRECT_STREAM),
+        # YouTube embed
+        (r'(https?://(?:www\.)?youtube\.com/embed/[\w-]{11}[^"\'\s]*)', VideoSource.YOUTUBE),
+        # Generic m3u8 URLs
+        (r'(https?://[^"\'\s]+\.m3u8[^"\'\s]*)', VideoSource.DIRECT_STREAM),
+    ]
+
+    def __init__(self, url: str, cookies: dict = None, browser: str = "chrome"):
+        self.url = url
+        self.cookies = cookies or {}
+        self.browser = browser
+        self.found_urls: List[Tuple[str, VideoSource]] = []
+
+    def fetch_and_scan(self) -> List[Tuple[str, VideoSource]]:
+        """Fetch the webpage and scan for video URLs."""
+        # First try yt-dlp with browser cookies (handles auth better)
+        found = self._try_ytdlp_extract()
+        if found:
+            self.found_urls = found
+            return found
+
+        # Fall back to requests-based scraping
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+            response = requests.get(self.url, cookies=self.cookies, headers=headers, timeout=15)
+            response.raise_for_status()
+
+            html = response.text
+            self.found_urls = self._scan_html(html)
+            return self.found_urls
+
+        except requests.RequestException as e:
+            print(f"Warning: Could not fetch webpage: {e}")
+            return []
+
+    def _try_ytdlp_extract(self) -> List[Tuple[str, VideoSource]]:
+        """Try to extract video URL using yt-dlp's generic extractor."""
+        import subprocess
+        import sys
+        import json
+
+        try:
+            cmd = [
+                sys.executable, "-m", "yt_dlp",
+                "--cookies-from-browser", self.browser,
+                "--dump-json",
+                "--no-download",
+                "--no-warnings",
+                "--ignore-errors",
+                "-q",
+                self.url
+            ]
+
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+
+            if result.returncode == 0 and result.stdout.strip():
+                # yt-dlp found something - parse the JSON
+                try:
+                    info = json.loads(result.stdout.strip().split('\n')[0])
+                    video_url = info.get('url') or info.get('webpage_url') or self.url
+
+                    # Determine source from the URL or extractor
+                    extractor = info.get('extractor', '').lower()
+                    if 'getcourse' in extractor or 'gceuproxy' in video_url:
+                        source = VideoSource.GETCOURSE
+                    elif 'kinescope' in extractor or 'kinescope' in video_url:
+                        source = VideoSource.KINESCOPE
+                    elif 'vimeo' in extractor or 'vimeo' in video_url:
+                        source = VideoSource.VIMEO
+                    elif 'youtube' in extractor or 'youtube' in video_url:
+                        source = VideoSource.YOUTUBE
+                    else:
+                        source = VideoSource.DIRECT_STREAM
+
+                    print(f"yt-dlp found video: {extractor or 'generic'}")
+                    return [(video_url, source)]
+
+                except json.JSONDecodeError:
+                    pass
+
+        except subprocess.TimeoutExpired:
+            print("Warning: yt-dlp extraction timed out")
+        except Exception as e:
+            print(f"Warning: yt-dlp extraction failed: {e}")
+
+        return []
+
+    def _scan_html(self, html: str) -> List[Tuple[str, VideoSource]]:
+        """Scan HTML content for video URLs."""
+        found = []
+        seen_urls = set()
+
+        for pattern, source in self.PATTERNS:
+            matches = re.findall(pattern, html, re.IGNORECASE)
+            for url in matches:
+                # Clean up URL (remove trailing quotes, escapes)
+                url = url.rstrip('"\'\\ ')
+                url = url.replace('\\/', '/')  # Unescape JSON
+
+                if url not in seen_urls:
+                    seen_urls.add(url)
+                    found.append((url, source))
+
+        # Prioritize: GetCourse > Kinescope > Vimeo > YouTube > generic m3u8
+        priority = {
+            VideoSource.GETCOURSE: 0,
+            VideoSource.KINESCOPE: 1,
+            VideoSource.VIMEO: 2,
+            VideoSource.YOUTUBE: 3,
+            VideoSource.DIRECT_STREAM: 4,
+        }
+        found.sort(key=lambda x: priority.get(x[1], 99))
+
+        return found
+
+    def get_best_url(self) -> Optional[Tuple[str, VideoSource]]:
+        """Get the best video URL found (highest priority)."""
+        if self.found_urls:
+            return self.found_urls[0]
+        return None

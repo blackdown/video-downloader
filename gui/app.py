@@ -9,10 +9,12 @@ from .models.queue_item import QueueItem, QueueStatus
 from .models.settings import AppSettings
 from .managers.queue_manager import QueueManager
 from .managers.event_processor import EventProcessor
+from .managers.logger import get_logger
 from .widgets.url_input import URLInput
 from .widgets.queue_list import QueueList
 from .widgets.settings_panel import SettingsPanel
 from .widgets.stream_warning import StreamWarning
+from .widgets.log_viewer import LogViewer
 
 
 class MainWindow(ctk.CTk):
@@ -23,12 +25,19 @@ class MainWindow(ctk.CTk):
     def __init__(self):
         super().__init__()
 
+        # Initialize logging first
+        self.log = get_logger()
+        self.log.info("MainWindow initializing")
+
         # Load settings
         self.settings = AppSettings.load()
+        self.settings.use_aria2 = False  # aria2c doesn't work with network paths
+        self.settings.no_cookies = True  # Cookie extraction adds complexity, not needed for most URLs
+        self.log.info(f"Settings loaded: output={self.settings.output_folder}")
 
         # Set up window
         self.title("Video Downloader")
-        self.geometry(f"{self.settings.window_width}x{self.settings.window_height}")
+        self.geometry("900x600")  # Fixed size - DPI scaling breaks saved sizes
         self.minsize(700, 400)
 
         # Set appearance
@@ -43,6 +52,9 @@ class MainWindow(ctk.CTk):
         # Track selected item for stream warning
         self._selected_item_id: Optional[str] = None
 
+        # Log viewer window reference
+        self._log_viewer: Optional[LogViewer] = None
+
         # Build UI
         self._setup_ui()
 
@@ -51,6 +63,8 @@ class MainWindow(ctk.CTk):
 
         # Handle window close
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+        self.log.info("MainWindow initialization complete")
 
     def _setup_ui(self) -> None:
         """Set up the main UI layout."""
@@ -146,6 +160,17 @@ class MainWindow(ctk.CTk):
         self.stream_warning = StreamWarning(right_panel)
         self.stream_warning.grid(row=1, column=0, sticky="new", padx=8, pady=(16, 8))
 
+        # View Log button (at bottom of right panel)
+        self.log_button = ctk.CTkButton(
+            right_panel,
+            text="View Log",
+            width=100,
+            fg_color="gray40",
+            hover_color="gray50",
+            command=self._on_view_log,
+        )
+        self.log_button.grid(row=2, column=0, sticky="s", padx=8, pady=(16, 8))
+
         # Status bar (bottom)
         self.status_bar = ctk.CTkLabel(
             self,
@@ -169,9 +194,9 @@ class MainWindow(ctk.CTk):
         if stats["downloading"] > 0:
             status = f"Downloading {stats['downloading']}/{stats['total']}"
         elif stats["analyzing"] > 0:
-            status = f"Analyzing... ({stats['total']} items)"
-        elif stats["pending"] > 0:
-            status = f"Ready ({stats['pending']} pending)"
+            status = f"Analyzing... ({stats['analyzing']} items)"
+        elif stats.get("ready", 0) > 0:
+            status = f"{stats['ready']} ready to download"
         elif stats["completed"] > 0:
             status = f"Completed: {stats['completed']}/{stats['total']}"
         elif stats["total"] > 0:
@@ -184,27 +209,33 @@ class MainWindow(ctk.CTk):
 
         self.status_bar.configure(text=status)
 
-    def _on_url_add(self, url: str) -> None:
+    def _on_url_add(self, url: str, filename: Optional[str] = None) -> None:
         """Handle URL addition."""
+        self.log.info(f"Adding URL: {url[:80]}" + (f" with filename: {filename}" if filename else ""))
         try:
-            item = self.queue_manager.add_url(url)
+            item = self.queue_manager.add_url(url, filename)
             self.queue_list.add_item(item)
             self._update_stream_warning(item)
         except ValueError as e:
+            self.log.error(f"Error adding URL: {e}")
             self._show_error(str(e))
 
     def _on_batch_file(self, filepath: str) -> None:
         """Handle batch file selection."""
+        self.log.info(f"Loading batch file: {filepath}")
         try:
             items = self.queue_manager.load_batch_file(filepath)
             for item in items:
                 self.queue_list.add_item(item)
+            self.log.info(f"Added {len(items)} items from batch file")
             self.status_bar.configure(text=f"Added {len(items)} items from batch file")
         except FileNotFoundError as e:
+            self.log.error(f"Batch file error: {e}")
             self._show_error(str(e))
 
     def _on_item_remove(self, item_id: str) -> None:
         """Handle item removal."""
+        self.log.info(f"Removing item: {item_id}")
         self.queue_manager.remove_item(item_id)
         self.queue_list.remove_item(item_id)
 
@@ -221,18 +252,22 @@ class MainWindow(ctk.CTk):
 
     def _on_start(self) -> None:
         """Handle Start button click."""
+        self.log.info("Start button clicked")
         self.queue_manager.start()
 
     def _on_pause(self) -> None:
         """Handle Pause button click."""
+        self.log.info("Pause button clicked")
         self.queue_manager.pause()
 
     def _on_cancel(self) -> None:
         """Handle Cancel button click."""
+        self.log.info("Cancel button clicked")
         self.queue_manager.cancel_all()
 
     def _on_clear_done(self) -> None:
         """Handle Clear Done button click."""
+        self.log.info("Clear Done button clicked")
         # Get IDs of completed items before clearing
         completed_ids = [
             item.id for item in self.queue_manager.get_all_items()
@@ -246,8 +281,19 @@ class MainWindow(ctk.CTk):
         for item_id in completed_ids:
             self.queue_list.remove_item(item_id)
 
+    def _on_view_log(self) -> None:
+        """Handle View Log button click."""
+        self.log.info("Opening log viewer")
+        # Create new log viewer or bring existing to front
+        if self._log_viewer is None or not self._log_viewer.winfo_exists():
+            self._log_viewer = LogViewer(self)
+        else:
+            self._log_viewer.focus()
+            self._log_viewer._load_log()  # Refresh
+
     def _on_settings_changed(self, settings: AppSettings) -> None:
         """Handle settings change."""
+        self.log.info("Settings changed")
         self.settings = settings
 
     def _show_error(self, message: str) -> None:
@@ -257,12 +303,10 @@ class MainWindow(ctk.CTk):
 
     def _on_close(self) -> None:
         """Handle window close."""
-        # Save window size
-        self.settings.window_width = self.winfo_width()
-        self.settings.window_height = self.winfo_height()
-        self.settings.save()
+        self.log.info("Window closing")
 
         # Cancel any running downloads
         self.queue_manager.cancel_all()
 
+        self.log.info("Application shutdown complete")
         self.destroy()

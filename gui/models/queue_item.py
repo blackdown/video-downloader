@@ -12,6 +12,7 @@ class QueueStatus(Enum):
     """Status of a queue item."""
     PENDING = "pending"
     ANALYZING = "analyzing"
+    READY = "ready"  # Analyzed and ready to download
     DOWNLOADING = "downloading"
     COMPLETED = "completed"
     ERROR = "error"
@@ -34,6 +35,7 @@ class QueueItem:
     error_message: Optional[str] = None
     is_video_only: bool = False
     output_path: Optional[str] = None
+    custom_filename: Optional[str] = None  # User-specified filename (without extension)
 
     def get_platform_short(self) -> str:
         """Get short platform identifier for display."""
@@ -53,6 +55,7 @@ class QueueItem:
         status_map = {
             QueueStatus.PENDING: "Waiting",
             QueueStatus.ANALYZING: "Analyzing...",
+            QueueStatus.READY: "Ready",
             QueueStatus.DOWNLOADING: "Downloading",
             QueueStatus.COMPLETED: "Completed",
             QueueStatus.ERROR: "Error",

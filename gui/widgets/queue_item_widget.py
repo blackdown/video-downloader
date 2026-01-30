@@ -17,6 +17,7 @@ class QueueItemWidget(ctk.CTkFrame):
     STATUS_COLORS = {
         QueueStatus.PENDING: "gray50",
         QueueStatus.ANALYZING: "#4a90d9",  # Blue
+        QueueStatus.READY: "#2d5a27",  # Green - ready to download
         QueueStatus.DOWNLOADING: "#4a90d9",  # Blue
         QueueStatus.COMPLETED: "#2d5a27",  # Green
         QueueStatus.ERROR: "#8b2500",  # Red

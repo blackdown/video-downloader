@@ -6,12 +6,13 @@ import subprocess
 import sys
 import re
 from typing import Optional
+from urllib.parse import urlparse
 from rich.console import Console
 from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn, DownloadColumn, TransferSpeedColumn, TaskProgressColumn
 from rich.live import Live
 from rich.panel import Panel
 from rich.text import Text
-from .detector import VimeoDetector, VimeoType, VideoSource
+from .detector import VimeoDetector, VimeoType, VideoSource, WebpageScraper
 from .auth import CookieManager
 from .commands import CommandBuilder
 
@@ -168,7 +169,7 @@ class VimeoDownloader:
         
     def analyze(self) -> bool:
         """Analyse the video and prepare for download."""
-        
+
         console.print(f"[cyan]Analysing video:[/cyan] {self.url}")
 
         # Extract cookies (unless skipped)
@@ -178,13 +179,40 @@ class VimeoDownloader:
             console.print("[dim]Skipping cookie extraction[/dim]")
         else:
             cookies = self.cookie_manager.extract_cookies()
-        
+
         # Detect video type
         self.detector = VimeoDetector(self.url, cookies)
         video_id, video_hash = self.detector.parse_url()
-        
+
+        # If URL doesn't match known patterns, try scraping the webpage
         if not video_id:
-            console.print("[red]✗ Invalid URL - not a recognized Vimeo or Kinescope URL[/red]")
+            console.print("[dim]URL not recognized, scanning webpage for embedded videos...[/dim]")
+
+            # Extract cookies for the target domain (not just vimeo.com)
+            if not self.skip_cookies:
+                domain = urlparse(self.url).netloc
+                console.print(f"[dim]Extracting cookies for {domain}...[/dim]")
+                cookies = self.cookie_manager.extract_cookies(domain) or {}
+
+            scraper = WebpageScraper(self.url, cookies, browser=self.browser)
+            found_urls = scraper.fetch_and_scan()
+
+            if found_urls:
+                best_url, source = found_urls[0]
+                console.print(f"[green]✓ Found embedded video:[/green] {source.value}")
+                console.print(f"[dim]  {best_url[:80]}{'...' if len(best_url) > 80 else ''}[/dim]")
+
+                # Show other found URLs if any
+                if len(found_urls) > 1:
+                    console.print(f"[dim]  (and {len(found_urls) - 1} more video URL(s) found)[/dim]")
+
+                # Re-detect with the found URL
+                self.url = best_url
+                self.detector = VimeoDetector(best_url, cookies)
+                video_id, video_hash = self.detector.parse_url()
+
+        if not video_id:
+            console.print("[red]✗ Could not find video URL - not a recognized video platform or webpage with embedded video[/red]")
             return False
 
         source = self.detector.source
