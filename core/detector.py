@@ -19,7 +19,9 @@ class VimeoType(Enum):
 class VideoSource(Enum):
     """Identifies the source platform of the video."""
     VIMEO = "vimeo"
+    YOUTUBE = "youtube"
     KINESCOPE = "kinescope"
+    GETCOURSE = "getcourse"
     DIRECT_STREAM = "direct_stream"
     UNKNOWN = "unknown"
 
@@ -32,6 +34,10 @@ class VimeoDetector:
     PLAYER_URL_PATTERN = r'player\.vimeo\.com/video/(\d+)'
     CDN_URL_PATTERN = r'vimeocdn\.com/.+\.m3u8'
     KINESCOPE_URL_PATTERN = r'kinescope\.io/([a-f0-9-]+)/media\.m3u8'
+    # YouTube patterns: youtube.com/watch?v=ID, youtu.be/ID, youtube.com/embed/ID, youtube.com/shorts/ID
+    YOUTUBE_URL_PATTERN = r'(?:youtube\.com/(?:watch\?.*v=|embed/|v/|shorts/)|youtu\.be/)([\w-]{11})'
+    # GetCourse video hosting: vh-api-X-XX.gceuproxy.com/api/playlist/master/ID1/ID2
+    GETCOURSE_URL_PATTERN = r'gceuproxy\.com/api/playlist/master/([a-f0-9]+)/([a-f0-9]+)'
     
     def __init__(self, url: str, cookies=None):
         self.url = url
@@ -59,6 +65,22 @@ class VimeoDetector:
             self.source = VideoSource.VIMEO
             return self.video_id, None
 
+        # Try YouTube URL pattern
+        match = re.search(self.YOUTUBE_URL_PATTERN, self.url)
+        if match:
+            self.video_id = match.group(1)
+            self.source = VideoSource.YOUTUBE
+            self.video_type = VimeoType.PUBLIC
+            return self.video_id, None
+
+        # Try GetCourse URL pattern
+        match = re.search(self.GETCOURSE_URL_PATTERN, self.url)
+        if match:
+            self.video_id = match.group(1)[:8]  # First 8 chars of first ID
+            self.source = VideoSource.GETCOURSE
+            self.video_type = VimeoType.PUBLIC
+            return self.video_id, None
+
         # Try Kinescope URL pattern
         match = re.search(self.KINESCOPE_URL_PATTERN, self.url)
         if match:
@@ -79,10 +101,13 @@ class VimeoDetector:
 
     def _check_is_master_playlist(self) -> bool:
         """Check if URL is a master playlist (has audio) vs video-only component."""
-        # Master playlists typically have these patterns
+        # Kinescope video-only streams have type=video in query string
+        if 'type=video' in self.url:
+            return False
+        # Vimeo master playlists typically have these patterns
         if '/primary/' in self.url and 'playlist.m3u8' in self.url:
             return True
-        # Video-only components have these patterns
+        # Vimeo video-only components have these patterns
         if 'st=video' in self.url or 'media.m3u8' in self.url:
             if '/primary/' not in self.url:
                 return False

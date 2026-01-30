@@ -1,18 +1,27 @@
-# Vimeo Video Downloader
+# Video Downloader
 
-Intelligent Vimeo video downloader with automatic type detection and authentication handling.
+Multi-platform video downloader with automatic detection, batch downloads, and rich progress display.
+
+## Supported Platforms
+
+| Platform | URL Examples |
+|----------|--------------|
+| **YouTube** | `youtube.com/watch?v=ID`, `youtu.be/ID`, `/shorts/`, `/embed/` |
+| **Vimeo** | `vimeo.com/ID`, `player.vimeo.com/video/ID` |
+| **Kinescope** | `kinescope.io/ID/media.m3u8?...` |
+| **GetCourse** | `gceuproxy.com/api/playlist/master/...` |
+| **Direct HLS** | Any `.m3u8` stream URL |
 
 ## Features
 
-- Automatic video type detection (public, password-protected, login-required, embed-only, direct streams)
-- Direct m3u8/HLS stream URL support - paste CDN URLs directly
-- **Master playlist detection** - warns if you're using a video-only URL
+- Automatic platform and video type detection
+- **Batch downloads** - queue multiple URLs from a file
 - Browser cookie extraction (Chrome, Firefox, Edge)
-- Password-protected video support
+- Password-protected video support (Vimeo)
+- Video-only stream detection with warnings
 - Parallel fragment downloads (16 or 32 in fast mode)
 - Optional aria2c integration for maximum speed
-- Custom output filenames
-- Clean progress output
+- Rich progress bar with speed and ETA
 - Clean MP4 output with proper metadata
 
 ## Installation
@@ -27,169 +36,139 @@ pip install -r requirements.txt
 
 **Windows:**
 ```powershell
-# Install yt-dlp
 pip install yt-dlp
-
-# Install ffmpeg (required for audio/video merging)
 winget install ffmpeg
-# OR download manually from https://www.gyan.dev/ffmpeg/builds/
-# Extract to C:\ffmpeg and add bin folder to PATH:
-$env:PATH += ";C:\ffmpeg\ffmpeg-8.0.1-essentials_build\bin"
 ```
 
-**macOS (Homebrew):**
+**macOS:**
 ```bash
 brew install yt-dlp ffmpeg
-# Optional: for maximum speed
-brew install aria2
 ```
 
-**Linux (Ubuntu/Debian):**
+**Linux:**
 ```bash
-sudo apt update
 sudo apt install yt-dlp ffmpeg
-# Optional: for maximum speed
-sudo apt install aria2
 ```
 
 ## Usage
 
-### Basic Examples
+### Single Video Download
 
-**Download a public video:**
 ```bash
+# YouTube
+python vimeo_dl.py "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+# Vimeo (public)
 python vimeo_dl.py https://vimeo.com/123456789
+
+# Vimeo (password-protected)
+python vimeo_dl.py https://vimeo.com/123456789 --password mypass
+
+# Direct stream URL
+python vimeo_dl.py "https://example.com/video.m3u8" --no-cookies
+
+# Fast mode (32 concurrent fragments)
+python vimeo_dl.py "https://..." --fast
 ```
 
-**Password-protected video:**
-```bash
-python vimeo_dl.py https://vimeo.com/123456789/hash --password mypassword
+### Batch Download
+
+Create a text file with URLs (one per line):
+
+**urls.txt:**
+```
+# My video queue
+https://www.youtube.com/watch?v=abc123
+https://vimeo.com/123456789
+
+# Comments start with #, empty lines ignored
+https://kinescope.io/abc.../media.m3u8?...
 ```
 
-**Direct stream URL with custom filename:**
+Download all:
 ```bash
-python vimeo_dl.py "https://vod-adaptive-ak.vimeocdn.com/.../playlist.m3u8?..." --no-cookies -n "My Video"
-```
-
-**Fast download (32 concurrent fragments):**
-```bash
-python vimeo_dl.py "https://..." --no-cookies --fast
-```
-
-**List available formats:**
-```bash
-python vimeo_dl.py "https://..." --no-cookies -F
-```
-
-**Use aria2 for faster downloads:**
-```bash
-python vimeo_dl.py https://vimeo.com/123456789 --aria2
-```
-
-**Dry run (show command without executing):**
-```bash
-python vimeo_dl.py https://vimeo.com/123456789 --dry-run
+python vimeo_dl.py --batch urls.txt --no-cookies --fast
 ```
 
 ### All Options
 
 ```
-Usage: vimeo_dl.py [OPTIONS] URL
+Usage: vimeo_dl.py [OPTIONS] [URL]
 
 Options:
-  -p, --password TEXT  Password for password-protected videos
-  -o, --output TEXT    Output directory (default: current directory)
-  -n, --name TEXT      Output filename (without extension)
-  -b, --browser TEXT   Browser to extract cookies from (chrome/firefox/edge)
-  --profile TEXT       Browser profile name (e.g., "Profile 1", "Default")
-  --aria2              Use aria2c for faster downloads
-  -f, --fast           Fast mode - 32 concurrent fragment downloads
-  --dry-run            Show command without executing
-  -F, --list-formats   List available formats without downloading
-  --no-cookies         Skip cookie extraction (for direct URLs)
-  --help               Show this message and exit
+  -B, --batch TEXT       Batch file with URLs (one per line)
+  -p, --password TEXT    Password for password-protected videos
+  -o, --output TEXT      Output directory (default: current directory)
+  -n, --name TEXT        Output filename (without extension)
+  -b, --browser TEXT     Browser to extract cookies from (chrome/firefox/edge)
+  --profile TEXT         Browser profile name (e.g., "Profile 1", "Default")
+  --aria2                Use aria2c for faster downloads
+  -f, --fast             Fast mode - 32 concurrent fragment downloads
+  --dry-run              Show command without executing
+  -F, --list-formats     List available formats without downloading
+  --no-cookies           Skip cookie extraction (for direct URLs)
+  --no-progress          Disable rich progress bar
+  --help                 Show this message and exit
 ```
 
-## Important: Master Playlist vs Video-Only URLs
+## Important: Video-Only Stream URLs
 
-When downloading direct m3u8 streams, you MUST use the **Master playlist URL**, not a video-only component URL.
+Some platforms (Kinescope, Vimeo CDN) separate video and audio into different streams. The tool will warn you if it detects a video-only URL:
+
+```
+WARNING: This is a video-only stream URL (type=video)!
+  Audio will be missing. You need the master playlist URL instead.
+```
+
+**How to identify URL types:**
 
 | URL Type | Pattern | Audio? |
 |----------|---------|--------|
-| Master (use this!) | Contains `/primary/` and `playlist.m3u8` | Yes |
-| Video-only | Contains `media.m3u8` and `st=video` | **NO** |
-| Audio-only | Contains `media.m3u8` and `st=audio` | Audio only |
+| Master (use this!) | `/master/` or `/primary/` + `playlist.m3u8` | Yes |
+| Video-only | `type=video` or `st=video` in URL | **NO** |
 
-The tool will warn you if it detects a video-only URL:
-```
-WARNING: This appears to be a video-only stream URL!
-  Audio may be missing. Use the Master playlist URL instead.
-```
-
-**How to find the Master URL:**
-1. Open DevTools (F12) → Network tab
-2. Filter by "m3u8"
-3. Look for URLs containing `/primary/` and ending in `playlist.m3u8`
-4. Avoid URLs ending in `media.m3u8` with `st=video`
+**Solution:** Go back to the source and find the master playlist URL, or look for a URL without `type=video`.
 
 ## How It Works
 
-1. **URL Analysis**: Extracts video ID and hash from the Vimeo URL, or detects direct m3u8 stream URLs
-2. **Type Detection**: Determines video type and checks for master playlist
-3. **Authentication**: Automatically extracts cookies from your browser (not needed for direct streams)
-4. **Download**: Uses yt-dlp with ffmpeg for optimal quality
-5. **Post-processing**: Merges audio/video and outputs clean MP4
+1. **URL Analysis**: Detects platform and extracts video ID
+2. **Type Detection**: Checks for password protection, video-only streams
+3. **Authentication**: Extracts cookies from browser if needed
+4. **Download**: Uses yt-dlp with optimal settings for each platform
+5. **Post-processing**: Merges audio/video into clean MP4
 
 ## Troubleshooting
 
 ### No audio in downloaded video
-You're using a **video-only** stream URL. Use the **Master playlist** URL instead. See the section above.
+You're using a video-only stream URL. Use the master playlist URL instead. See section above.
 
-### "Could not extract cookies: This operation requires admin"
-On Windows, use `--no-cookies` for direct m3u8 URLs:
+### "Could not extract cookies"
+Use `--no-cookies` for direct stream URLs:
 ```bash
-python vimeo_dl.py "YOUR_M3U8_URL" --no-cookies
+python vimeo_dl.py "YOUR_URL" --no-cookies
 ```
 
-### "yt-dlp not found"
-```bash
-pip install yt-dlp
-```
-
-### ffmpeg not found / MPEG-TS warnings
-Install ffmpeg and add to PATH:
-```powershell
-# Windows - download from https://www.gyan.dev/ffmpeg/builds/
-# Extract and add to PATH:
-$env:PATH += ";C:\ffmpeg\ffmpeg-8.0.1-essentials_build\bin"
-```
+### Progress bar not updating
+Try `--no-progress` to see raw yt-dlp output and diagnose issues.
 
 ### "URL expired" or "403 Forbidden"
-Direct stream URLs expire (usually in a few hours). Get a fresh URL from DevTools.
-
-### Lots of HTTP request spam in output
-Update to the latest version - verbose ffmpeg output has been suppressed.
+Direct stream URLs expire. Get a fresh URL from the source.
 
 ## Project Structure
 
 ```
-vimeo-downloader/
+video-downloader/
 ├── vimeo_dl.py          # Main CLI entry point
 ├── core/
-│   ├── __init__.py
-│   ├── detector.py      # URL/video type detection + master playlist check
+│   ├── detector.py      # URL/platform detection
 │   ├── downloader.py    # Download orchestration
-│   ├── auth.py          # Cookie/auth handling
-│   └── commands.py      # Command construction
+│   ├── commands.py      # yt-dlp command building
+│   └── auth.py          # Cookie handling
 ├── requirements.txt
+├── CLAUDE.md            # AI assistant instructions
 ├── DEV_NOTES.md         # Development notes
 └── README.md
 ```
-
-## Credits
-
-Built with inspiration from Devin Schumacher's comprehensive Vimeo download guide:
-https://gist.github.com/devinschumacher/8024bc4693d79aef641b2c281e45d6cb
 
 ## License
 

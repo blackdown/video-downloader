@@ -24,16 +24,19 @@ class CommandBuilder:
 
     def get_url(self) -> str:
         """Get the appropriate URL for download."""
-        # For direct stream URLs (m3u8, Kinescope), use the original URL
-        if self.source in (VideoSource.DIRECT_STREAM, VideoSource.KINESCOPE) and self.original_url:
+        # For direct stream URLs (m3u8, Kinescope, GetCourse), use the original URL
+        if self.source in (VideoSource.DIRECT_STREAM, VideoSource.KINESCOPE, VideoSource.GETCOURSE) and self.original_url:
             return self.original_url
+        # For YouTube, use the standard watch URL
+        if self.source == VideoSource.YOUTUBE:
+            return f"https://www.youtube.com/watch?v={self.video_id}"
         if self.video_hash:
             return f"https://vimeo.com/{self.video_id}/{self.video_hash}"
         return f"https://vimeo.com/{self.video_id}"
 
     def is_direct_stream(self) -> bool:
-        """Check if this is a direct stream URL (m3u8, Kinescope, etc.)."""
-        return self.source in (VideoSource.DIRECT_STREAM, VideoSource.KINESCOPE)
+        """Check if this is a direct stream URL (m3u8, Kinescope, GetCourse, etc.)."""
+        return self.source in (VideoSource.DIRECT_STREAM, VideoSource.KINESCOPE, VideoSource.GETCOURSE)
     
     def build_ytdlp_command(self, output_path: str = ".", use_aria2: bool = False, fast: bool = False, filename: str = None) -> List[str]:
         """Build yt-dlp command with appropriate flags."""
@@ -62,8 +65,8 @@ class CommandBuilder:
         if self.password and self.video_type == VimeoType.PASSWORD_PROTECTED:
             cmd.extend(["--video-password", self.password])
 
-        # Add referer (skip for direct stream URLs)
-        if not self.is_direct_stream():
+        # Add referer (skip for direct streams and YouTube)
+        if not self.is_direct_stream() and self.source != VideoSource.YOUTUBE:
             cmd.extend(["--referer", referer])
 
         # Quality and format selection
@@ -73,7 +76,8 @@ class CommandBuilder:
                 "--merge-output-format", "mp4",
             ])
         else:
-            # For normal Vimeo URLs, select best video+audio
+            # For Vimeo/YouTube, select best video + best audio and merge
+            # bv*+ba/b = best video + best audio, fallback to best combined
             cmd.extend([
                 "-f", "bv*+ba/b",
                 "-S", "codec:avc,res,ext",
@@ -87,15 +91,13 @@ class CommandBuilder:
                 "--downloader", "aria2c",
                 "--downloader-args", "aria2c:-x 16 -s 16 -k 1M"
             ])
-        elif self.is_direct_stream():
-            # Use ffmpeg for m3u8 streams - better audio handling
-            # -loglevel warning suppresses the verbose HTTP request output
-            cmd.extend([
-                "--downloader", "ffmpeg",
-                "--downloader-args", "ffmpeg:-loglevel warning"
-            ])
         else:
+            # Native downloader works for both regular videos and HLS streams
+            # and outputs progress that the progress bar can parse
             cmd.extend(["--downloader", "native"])
+
+        # Put temp/part files in a subfolder to keep root clean
+        cmd.extend(["--paths", f"temp:{output_path}/.downloading"])
 
         # Output path and filename
         if filename:

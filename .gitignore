@@ -1,5 +1,10 @@
 PAT_025_Liquid_Charcoal.mp4
 .claude
-.claude/settings.local.json
+.claude/*
 CLAUDE.md
 DEV_NOTES.md
+.downloading
+.downloading/*
+.env
+core/__pycache__/
+core/__pycache__/*

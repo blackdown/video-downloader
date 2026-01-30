@@ -27,10 +27,14 @@ class ProgressParser:
     PROGRESS_PATTERN = re.compile(
         r'\[download\]\s+(\d+\.?\d*)%\s+of\s+~?([\d.]+)(\w+)\s+at\s+([\d.]+)(\w+)/s\s+ETA\s+(\d+:\d+)'
     )
+    # Simpler pattern that just captures percentage (fallback for varied formats)
+    SIMPLE_PROGRESS_PATTERN = re.compile(
+        r'\[download\]\s+(\d+\.?\d*)%'
+    )
     # Pattern for fragment progress like:
-    # [download] Downloading item 5 of 10
+    # [download] Downloading fragment 5 of 100
     FRAGMENT_PATTERN = re.compile(
-        r'\[download\]\s+Downloading\s+(?:item|video)\s+(\d+)\s+of\s+(\d+)'
+        r'\[download\]\s+Downloading\s+(?:item|video|fragment)\s+(\d+)\s+of\s+(\d+)'
     )
     # Pattern for completed download
     COMPLETE_PATTERN = re.compile(
@@ -68,7 +72,7 @@ class ProgressParser:
             self.status = f"Downloading: {self.destination.split('/')[-1]}"
             return True
 
-        # Check for standard progress
+        # Check for standard progress (full format with size/speed/eta)
         match = self.PROGRESS_PATTERN.search(line)
         if match:
             self.percent = float(match.group(1))
@@ -82,6 +86,22 @@ class ProgressParser:
             self.total_size = self._to_bytes(size_val, size_unit)
             self.downloaded = int(self.total_size * self.percent / 100)
             self.speed = f"{speed_val:.1f} {speed_unit}/s"
+            self.status = "Downloading"
+            return True
+
+        # Check for fragment progress (common with YouTube DASH)
+        frag_match = self.FRAGMENT_PATTERN.search(line)
+        if frag_match:
+            current = int(frag_match.group(1))
+            total = int(frag_match.group(2))
+            self.percent = (current / total) * 100
+            self.status = f"Fragment {current}/{total}"
+            return True
+
+        # Fallback: simple percentage pattern
+        simple_match = self.SIMPLE_PROGRESS_PATTERN.search(line)
+        if simple_match:
+            self.percent = float(simple_match.group(1))
             self.status = "Downloading"
             return True
 
@@ -151,8 +171,18 @@ class VimeoDownloader:
         source = self.detector.source
 
         # Display detection results based on source
-        if source == VideoSource.KINESCOPE:
+        if source == VideoSource.YOUTUBE:
+            console.print(f"[green]✓ YouTube video detected[/green] (ID: {video_id})")
+        elif source == VideoSource.GETCOURSE:
+            console.print(f"[green]✓ GetCourse stream detected[/green] (ID: {video_id}...)")
+        elif source == VideoSource.KINESCOPE:
             console.print(f"[green]✓ Kinescope stream detected[/green] (ID: {video_id[:8]}...)")
+            # Check if this is a video-only stream
+            if self.detector.is_video_only_stream():
+                console.print("[bold yellow]⚠ WARNING: This is a video-only stream URL (type=video)![/bold yellow]")
+                console.print("[yellow]  Audio will be missing. You need the master playlist URL instead.[/yellow]")
+                console.print("[yellow]  Look for a URL without 'type=video' or with 'type=audio' for the audio track.[/yellow]")
+                console.print("")
         elif source == VideoSource.DIRECT_STREAM:
             console.print("[green]✓ Direct m3u8 stream URL detected[/green]")
             # Check if this is a video-only stream
@@ -166,8 +196,8 @@ class VimeoDownloader:
             if video_hash:
                 console.print(f"[green]✓ Video hash:[/green] {video_hash}")
 
-        # Detect type (skip for direct streams)
-        if source in (VideoSource.KINESCOPE, VideoSource.DIRECT_STREAM):
+        # Detect type (skip for YouTube/Kinescope/GetCourse/direct streams - yt-dlp handles them)
+        if source in (VideoSource.YOUTUBE, VideoSource.KINESCOPE, VideoSource.GETCOURSE, VideoSource.DIRECT_STREAM):
             video_type = VimeoType.PUBLIC
         else:
             video_type = self.detector.detect_type()
