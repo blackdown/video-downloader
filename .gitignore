@@ -13,3 +13,7 @@ build/
 dist/
 *.spec
 nul
+ *.pyc
+ *__*
+video_dl_gui.log
+*.log
