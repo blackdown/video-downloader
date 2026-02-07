@@ -5,17 +5,21 @@ DEV_NOTES.md
 .downloading
 .downloading/*
 .env
-core/__pycache__/
-core/__pycache__/*
 .venv/
 venv/
+
+# Python
+__pycache__/
+*.pyc
 
 # PyInstaller build artifacts
 build/
 dist/
 build_tools/
 nul
- *.pyc
- *__*
-video_dl_gui.log
+
+# Logs
 *.log
+
+# Runtime
+settings.json
