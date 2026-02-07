@@ -8,6 +8,7 @@ DEV_NOTES.md
 .venv/
 venv/
 venv_arm/
+.DS_Store
 
 # Python
 __pycache__/
