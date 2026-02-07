@@ -7,10 +7,11 @@ import shutil
 import tempfile
 import sqlite3
 import subprocess
-import sys
 import json
 from typing import Optional, Dict
 from pathlib import Path
+
+from .runtime import ytdlp_cmd, ffmpeg_env
 
 try:
     import browser_cookie3
@@ -101,7 +102,7 @@ class CookieManager:
             target_url = f"https://{domain}/" if domain else "https://example.com"
 
             cmd = [
-                sys.executable, "-m", "yt_dlp",
+                *ytdlp_cmd(),
                 "--cookies-from-browser", browser_arg,
                 "--cookies", cookie_file,
                 "--skip-download",
@@ -111,7 +112,7 @@ class CookieManager:
                 target_url
             ]
 
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, env=ffmpeg_env())
 
             # Parse the Netscape cookie file
             cookies = {}

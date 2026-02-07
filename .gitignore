@@ -7,11 +7,13 @@ DEV_NOTES.md
 .env
 core/__pycache__/
 core/__pycache__/*
+.venv/
+venv/
 
 # PyInstaller build artifacts
 build/
 dist/
-*.spec
+build_tools/
 nul
  *.pyc
  *__*

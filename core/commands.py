@@ -2,9 +2,9 @@
 Command construction for different download methods.
 """
 
-import sys
 from typing import List, Optional
 from .detector import VimeoType, VideoSource
+from .runtime import ytdlp_cmd
 
 
 class CommandBuilder:
@@ -48,7 +48,7 @@ class CommandBuilder:
         concurrent = "32" if fast else "16"
 
         cmd = [
-            sys.executable, "-m", "yt_dlp",
+            *ytdlp_cmd(),
             "-N", concurrent,  # Parallel fragments
             "--no-warnings",   # Hide warnings
             "--progress",      # Ensure progress bar shows

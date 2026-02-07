@@ -3,9 +3,25 @@ Application settings with persistence.
 """
 
 import json
+import sys
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Optional
+
+
+def _default_settings_path() -> Path:
+    """Return the default settings.json path.
+
+    When running as a frozen .app bundle, store settings in
+    ~/Library/Application Support/Video Downloader/ so the file is in a
+    stable, writable location regardless of CWD.  When running from
+    source, use the current directory (existing behaviour).
+    """
+    if getattr(sys, "frozen", False) and sys.platform == "darwin":
+        app_support = Path.home() / "Library" / "Application Support" / "Video Downloader"
+        app_support.mkdir(parents=True, exist_ok=True)
+        return app_support / "settings.json"
+    return Path("settings.json")
 
 
 @dataclass
@@ -29,7 +45,7 @@ class AppSettings:
     @classmethod
     def load(cls, settings_path: Optional[str] = None) -> "AppSettings":
         """Load settings from JSON file."""
-        path = Path(settings_path) if settings_path else Path("settings.json")
+        path = Path(settings_path) if settings_path else _default_settings_path()
 
         if path.exists():
             try:

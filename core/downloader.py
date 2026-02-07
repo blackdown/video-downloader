@@ -3,7 +3,6 @@ Download orchestration and execution.
 """
 
 import subprocess
-import sys
 import re
 from typing import Optional
 from urllib.parse import urlparse
@@ -15,6 +14,7 @@ from rich.text import Text
 from .detector import VimeoDetector, VimeoType, VideoSource, WebpageScraper
 from .auth import CookieManager
 from .commands import CommandBuilder
+from .runtime import ytdlp_cmd, ffmpeg_env
 
 
 console = Console()
@@ -298,7 +298,7 @@ class VimeoDownloader:
     def _download_simple(self, cmd: list) -> bool:
         """Execute download without rich progress (fallback)."""
         try:
-            result = subprocess.run(cmd, check=True)
+            result = subprocess.run(cmd, check=True, env=ffmpeg_env())
             console.print("\n[green]✓ Download completed successfully![/green]")
             return True
         except subprocess.CalledProcessError as e:
@@ -320,7 +320,8 @@ class VimeoDownloader:
                 text=True,
                 bufsize=1,
                 encoding='utf-8',
-                errors='replace'
+                errors='replace',
+                env=ffmpeg_env(),
             )
 
             with Progress(
@@ -377,12 +378,12 @@ class VimeoDownloader:
             return False
 
         url = self.command_builder.get_url()
-        cmd = [sys.executable, "-m", "yt_dlp", "-F", "--no-cookies-from-browser", url]
+        cmd = [*ytdlp_cmd(), "-F", "--no-cookies-from-browser", url]
 
         console.print("\n[cyan]Available formats:[/cyan]\n")
 
         try:
-            subprocess.run(cmd, check=True)
+            subprocess.run(cmd, check=True, env=ffmpeg_env())
             return True
         except subprocess.CalledProcessError as e:
             console.print(f"\n[red]✗ Failed to list formats[/red]")

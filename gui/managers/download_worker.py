@@ -10,6 +10,7 @@ from typing import Optional
 
 from core.downloader import ProgressParser, VimeoDownloader
 from core.detector import VideoSource
+from core.runtime import ffmpeg_env
 from ..models.queue_item import QueueItem, QueueStatus
 from ..models.settings import AppSettings
 from .event_processor import EventProcessor, EventType
@@ -210,6 +211,7 @@ class DownloadWorker:
                 bufsize=1,
                 encoding="utf-8",
                 errors="replace",
+                env=ffmpeg_env(),
             )
             self.log.debug(f"[{self.item.id}] Process started with PID: {self._process.pid}")
 

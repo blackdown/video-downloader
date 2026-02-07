@@ -231,12 +231,12 @@ class WebpageScraper:
     def _try_ytdlp_extract(self) -> List[Tuple[str, VideoSource]]:
         """Try to extract video URL using yt-dlp's generic extractor."""
         import subprocess
-        import sys
         import json
+        from .runtime import ytdlp_cmd, ffmpeg_env
 
         try:
             cmd = [
-                sys.executable, "-m", "yt_dlp",
+                *ytdlp_cmd(),
                 "--cookies-from-browser", self.browser,
                 "--dump-json",
                 "--no-download",
@@ -246,7 +246,7 @@ class WebpageScraper:
                 self.url
             ]
 
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60, env=ffmpeg_env())
 
             if result.returncode == 0 and result.stdout.strip():
                 # yt-dlp found something - parse the JSON
