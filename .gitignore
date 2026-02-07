@@ -7,6 +7,7 @@ DEV_NOTES.md
 .env
 .venv/
 venv/
+venv_arm/
 
 # Python
 __pycache__/
