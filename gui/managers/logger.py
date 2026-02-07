@@ -47,12 +47,14 @@ def setup_logging(log_file: str = None) -> logging.Logger:
     file_handler.setFormatter(file_format)
     logger.addHandler(file_handler)
 
-    # Console handler for development
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(logging.INFO)
-    console_format = logging.Formatter("%(levelname)s: %(message)s")
-    console_handler.setFormatter(console_format)
-    logger.addHandler(console_handler)
+    # Console handler for development (skip when stdout is unavailable,
+    # e.g. frozen .app bundles built with console=False)
+    if sys.stdout is not None:
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(logging.INFO)
+        console_format = logging.Formatter("%(levelname)s: %(message)s")
+        console_handler.setFormatter(console_format)
+        logger.addHandler(console_handler)
 
     # Log startup
     logger.info(f"=== Video Downloader GUI started at {datetime.now().isoformat()} ===")

@@ -286,7 +286,8 @@ class MainWindow(ctk.CTk):
         self.log.info("Opening log viewer")
         # Create new log viewer or bring existing to front
         if self._log_viewer is None or not self._log_viewer.winfo_exists():
-            self._log_viewer = LogViewer(self)
+            from .managers.logger import _default_log_path
+            self._log_viewer = LogViewer(self, log_file=_default_log_path())
         else:
             self._log_viewer.focus()
             self._log_viewer._load_log()  # Refresh

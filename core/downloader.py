@@ -6,18 +6,31 @@ import subprocess
 import re
 from typing import Optional
 from urllib.parse import urlparse
-from rich.console import Console
-from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn, DownloadColumn, TransferSpeedColumn, TaskProgressColumn
-from rich.live import Live
-from rich.panel import Panel
-from rich.text import Text
 from .detector import VimeoDetector, VimeoType, VideoSource, WebpageScraper
 from .auth import CookieManager
 from .commands import CommandBuilder
-from .runtime import ytdlp_cmd, ffmpeg_env
+from .runtime import is_frozen, ytdlp_cmd, ffmpeg_env
 
 
-console = Console()
+if is_frozen():
+    # Frozen GUI mode: no terminal, so rich console output is useless.
+    # Avoid importing rich entirely — it dynamically loads a unicode-data
+    # module whose hyphenated name (unicode17-0-0) PyInstaller can't bundle.
+    class _NullConsole:
+        """Drop-in for rich.Console that discards all output."""
+        def print(self, *args, **kwargs):
+            pass
+    console = _NullConsole()
+else:
+    from rich.console import Console
+    from rich.progress import (
+        Progress, BarColumn, TextColumn, TimeRemainingColumn,
+        DownloadColumn, TransferSpeedColumn, TaskProgressColumn,
+    )
+    from rich.live import Live
+    from rich.panel import Panel
+    from rich.text import Text
+    console = Console()
 
 
 class ProgressParser:

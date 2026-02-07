@@ -1,6 +1,6 @@
 # Video Downloader
 
-Multi-platform video downloader with automatic detection, batch downloads, and rich progress display.
+Multi-platform video downloader with automatic detection, batch downloads, and rich progress display. Available as a CLI tool and a macOS GUI app.
 
 ## Supported Platforms
 
@@ -26,6 +26,23 @@ Multi-platform video downloader with automatic detection, batch downloads, and r
 
 ## Installation
 
+### macOS: Standalone App
+
+Build the `.app` bundle (bundles yt-dlp and ffmpeg — no external tools needed):
+
+```bash
+# One-time setup
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt pyinstaller
+brew install ffmpeg
+
+# Build
+./build_macos.sh
+open "dist/Video Downloader.app"
+```
+
+The app stores logs in `~/Library/Logs/Video Downloader/` and settings in `~/Library/Application Support/Video Downloader/`.
+
 ### Windows: Standalone Executable
 
 Download `video_dl.exe` from the [Releases](../../releases) page. No Python required.
@@ -36,7 +53,7 @@ winget install yt-dlp
 winget install ffmpeg
 ```
 
-### macOS / Linux: Run from Source
+### Any Platform: Run from Source
 
 1. Install external tools:
 
@@ -55,15 +72,17 @@ sudo apt install yt-dlp ffmpeg python3 python3-pip
 pip install -r requirements.txt
 ```
 
-3. Run with Python:
+3. Run the GUI or CLI:
 ```bash
-python video_dl.py "https://..." --no-cookies
+python video_dl_gui.py                         # GUI
+python video_dl.py "https://..." --no-cookies  # CLI
 ```
 
 ## Usage
 
+**macOS App:** Open `Video Downloader.app` — add URLs, set output folder, download.
 **Windows:** Use `video_dl.exe`
-**macOS/Linux:** Use `python video_dl.py`
+**CLI:** Use `python video_dl.py`
 
 ### Single Video Download
 
@@ -169,25 +188,42 @@ Direct stream URLs expire. Get a fresh URL from the source.
 
 ## Building from Source
 
-To build the standalone executable:
+### macOS .app Bundle
+
+```bash
+./build_macos.sh
+```
+
+Requires a venv with dependencies + pyinstaller, and Homebrew ffmpeg.
+The script downloads a standalone yt-dlp binary, builds with PyInstaller,
+injects yt-dlp into the bundle, and re-signs.
+
+### Windows CLI Executable
 
 ```bash
 pip install pyinstaller
 pyinstaller --onefile --name video_dl --console video_dl.py
 ```
 
-The executable will be created in the `dist/` folder.
-
 ## Project Structure
 
 ```
 video-downloader/
-├── video_dl.py          # Main CLI entry point
+├── video_dl.py          # CLI entry point
+├── video_dl_gui.py      # GUI entry point
+├── video_dl_gui.spec    # PyInstaller spec for macOS .app
+├── build_macos.sh       # macOS build script
 ├── core/
+│   ├── runtime.py       # Frozen/source mode detection
 │   ├── detector.py      # URL/platform detection
 │   ├── downloader.py    # Download orchestration
 │   ├── commands.py      # yt-dlp command building
 │   └── auth.py          # Cookie handling
+├── gui/
+│   ├── app.py           # Main window
+│   ├── managers/        # Download workers, logging, queue
+│   ├── models/          # Settings, queue items
+│   └── widgets/         # UI components
 ├── requirements.txt
 └── README.md
 ```

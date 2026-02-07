@@ -36,9 +36,20 @@ def ffmpeg_env() -> dict:
 
     yt-dlp finds ffmpeg via PATH, so we prepend the bundle directory.
     When running from source, returns the normal environment unchanged.
+
+    When frozen, also strips PyInstaller-internal env vars so that the
+    bundled yt-dlp (which is itself a PyInstaller binary) boots cleanly
+    instead of trying to reuse the parent process's ``_MEIPASS`` directory.
     """
     env = os.environ.copy()
     if is_frozen():
         bin_dir = _bundle_bin_dir()
         env["PATH"] = bin_dir + os.pathsep + env.get("PATH", "")
+        # Remove PyInstaller env vars that confuse child PyInstaller binaries
+        for key in list(env.keys()):
+            if key.startswith(("_MEIPASS", "_PYI", "__PYINSTALLER")):
+                del env[key]
+        # Remove injected dylib paths that could make the child load wrong libs
+        for key in ("DYLD_LIBRARY_PATH", "DYLD_FRAMEWORK_PATH"):
+            env.pop(key, None)
     return env

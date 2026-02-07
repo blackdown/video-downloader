@@ -95,6 +95,13 @@ a = Analysis(
     ],
     hiddenimports=[
         "customtkinter",
+        # Third-party modules that PyInstaller may not auto-detect
+        "rich",
+        "rich.console",
+        "rich.progress",
+        "rich.live",
+        "rich.panel",
+        "rich.text",
         # Core application modules
         "core",
         "core.auth",
