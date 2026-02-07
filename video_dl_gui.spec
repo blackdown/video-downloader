@@ -159,5 +159,7 @@ app = BUNDLE(
     info_plist={
         "CFBundleShortVersionString": "1.0.0",
         "NSHighResolutionCapable": True,
+        # Allow Rosetta translation on Apple Silicon when built with x86_64 Python
+        "LSArchitecturePriority": ["x86_64"],
     },
 )
