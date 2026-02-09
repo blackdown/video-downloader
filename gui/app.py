@@ -15,6 +15,7 @@ from .widgets.queue_list import QueueList
 from .widgets.settings_panel import SettingsPanel
 from .widgets.stream_warning import StreamWarning
 from .widgets.log_viewer import LogViewer
+from .widgets.video_detect_dialog import VideoDetectDialog
 
 
 class MainWindow(ctk.CTk):
@@ -32,7 +33,7 @@ class MainWindow(ctk.CTk):
         # Load settings
         self.settings = AppSettings.load()
         self.settings.use_aria2 = False  # aria2c doesn't work with network paths
-        self.settings.no_cookies = True  # Cookie extraction adds complexity, not needed for most URLs
+        # Note: no_cookies setting is loaded from saved settings (default: False = use cookies)
         self.log.info(f"Settings loaded: output={self.settings.output_folder}")
 
         # Set up window
@@ -73,13 +74,29 @@ class MainWindow(ctk.CTk):
         self.grid_columnconfigure(1, weight=1, minsize=220)
         self.grid_rowconfigure(1, weight=1)
 
-        # URL input (top, spans both columns)
+        # URL input row
+        url_row = ctk.CTkFrame(self, fg_color="transparent")
+        url_row.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 8))
+        url_row.grid_columnconfigure(0, weight=1)
+
         self.url_input = URLInput(
-            self,
+            url_row,
             on_url_submit=self._on_url_add,
             on_batch_file=self._on_batch_file,
         )
-        self.url_input.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 8))
+        self.url_input.grid(row=0, column=0, sticky="ew")
+
+        # Detect Videos button
+        self.detect_button = ctk.CTkButton(
+            url_row,
+            text="Detect Videos",
+            width=110,
+            height=36,
+            fg_color="#6b5b95",
+            hover_color="#7b6ba5",
+            command=self._on_detect_videos,
+        )
+        self.detect_button.grid(row=0, column=1, padx=(8, 0))
 
         # Queue list (left side)
         queue_frame = ctk.CTkFrame(self)
@@ -143,6 +160,16 @@ class MainWindow(ctk.CTk):
             hover_color="gray50",
         )
         self.clear_button.pack(side="left")
+
+        self.open_folder_button = ctk.CTkButton(
+            controls_frame,
+            text="Open Folder",
+            width=85,
+            command=self._on_open_folder,
+            fg_color="gray40",
+            hover_color="gray50",
+        )
+        self.open_folder_button.pack(side="left", padx=(4, 0))
 
         # Right panel (settings + stream warning)
         right_panel = ctk.CTkFrame(self)
@@ -291,6 +318,58 @@ class MainWindow(ctk.CTk):
         else:
             self._log_viewer.focus()
             self._log_viewer._load_log()  # Refresh
+
+    def _on_open_folder(self) -> None:
+        """Handle Open Folder button click - opens the output folder."""
+        import os
+        import subprocess
+        import sys
+
+        folder = self.settings.output_folder
+        self.log.info(f"Opening folder: {folder}")
+
+        if not os.path.isdir(folder):
+            self._show_error(f"Folder not found: {folder}")
+            return
+
+        # Open folder in file explorer
+        if sys.platform == "win32":
+            os.startfile(folder)
+        elif sys.platform == "darwin":
+            subprocess.run(["open", folder])
+        else:
+            subprocess.run(["xdg-open", folder])
+
+    def _on_detect_videos(self) -> None:
+        """Handle Detect Videos button click - opens browser detection dialog."""
+        self.log.info("Opening video detection dialog")
+        VideoDetectDialog(
+            self,
+            on_add_videos=self._on_detected_videos_add,
+            browser=self.settings.browser,
+        )
+
+    def _on_detected_videos_add(self, urls: list) -> None:
+        """Handle videos detected and selected for download."""
+        self.log.info(f"Adding {len(urls)} detected videos to queue")
+        added = 0
+        errors = []
+        for url in urls:
+            try:
+                self.log.debug(f"Adding URL: {url[:100]}...")
+                item = self.queue_manager.add_url(url, None)
+                self.queue_list.add_item(item)
+                added += 1
+            except Exception as e:
+                error_msg = f"{type(e).__name__}: {e}"
+                self.log.error(f"Error adding detected URL: {error_msg}")
+                errors.append(error_msg)
+
+        # Show status
+        if errors:
+            self._show_error(f"Added {added} videos, {len(errors)} failed")
+        elif added > 0:
+            self.status_bar.configure(text=f"Added {added} video(s) to queue")
 
     def _on_settings_changed(self, settings: AppSettings) -> None:
         """Handle settings change."""
