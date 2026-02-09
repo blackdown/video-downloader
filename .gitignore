@@ -18,7 +18,13 @@ __pycache__/
 build/
 dist/
 build_tools/
+bundle/
+*.spec
 nul
+
+# Windows build artifacts (not needed on Mac)
+*.exe
+*.zip
 
 # Logs
 *.log
