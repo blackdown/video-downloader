@@ -22,6 +22,7 @@ class VideoSource(Enum):
     YOUTUBE = "youtube"
     KINESCOPE = "kinescope"
     GETCOURSE = "getcourse"
+    SKILLSHARE = "skillshare"  # Cloudflare Stream (used by Skillshare)
     DIRECT_STREAM = "direct_stream"
     WEBPAGE = "webpage"  # Generic webpage that may contain embedded videos
     UNKNOWN = "unknown"
@@ -39,7 +40,9 @@ class VimeoDetector:
     YOUTUBE_URL_PATTERN = r'(?:youtube\.com/(?:watch\?.*v=|embed/|v/|shorts/)|youtu\.be/)([\w-]{11})'
     # GetCourse video hosting: vh-api-X-XX.gceuproxy.com/api/playlist/master/ID1/ID2
     GETCOURSE_URL_PATTERN = r'gceuproxy\.com/api/playlist/master/([a-f0-9]+)/([a-f0-9]+)'
-    
+    # Cloudflare Stream (Skillshare): customer-*.cloudflarestream.com/JWT/manifest/video.m3u8
+    CLOUDFLARE_STREAM_PATTERN = r'cloudflarestream\.com/(eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)/manifest/video\.m3u8'
+
     def __init__(self, url: str, cookies=None):
         self.url = url
         self.cookies = cookies
@@ -87,6 +90,28 @@ class VimeoDetector:
         if match:
             self.video_id = match.group(1)
             self.source = VideoSource.KINESCOPE
+            self.video_type = VimeoType.PUBLIC
+            return self.video_id, None
+
+        # Try Cloudflare Stream (Skillshare) URL pattern
+        match = re.search(self.CLOUDFLARE_STREAM_PATTERN, self.url)
+        if match:
+            # Extract video ID from JWT 'sub' claim (first 8 chars for display)
+            jwt_token = match.group(1)
+            try:
+                import base64
+                import json
+                # Decode JWT payload (middle part)
+                payload = jwt_token.split('.')[1]
+                # Add padding if needed
+                padding = 4 - len(payload) % 4
+                if padding != 4:
+                    payload += '=' * padding
+                decoded = json.loads(base64.urlsafe_b64decode(payload))
+                self.video_id = decoded.get('sub', jwt_token[:8])[:8]
+            except Exception:
+                self.video_id = jwt_token[:8]
+            self.source = VideoSource.SKILLSHARE
             self.video_type = VimeoType.PUBLIC
             return self.video_id, None
 
@@ -188,6 +213,8 @@ class WebpageScraper:
         (r'(https?://[a-z0-9-]+\.gceuproxy\.com/api/playlist/master/[a-f0-9]+/[a-f0-9]+[^"\'\s]*)', VideoSource.GETCOURSE),
         # Kinescope: kinescope.io/ID/media.m3u8
         (r'(https?://kinescope\.io/[a-f0-9-]+/media\.m3u8[^"\'\s]*)', VideoSource.KINESCOPE),
+        # Cloudflare Stream (Skillshare): customer-*.cloudflarestream.com/JWT/manifest/video.m3u8
+        (r'(https?://customer-[a-z0-9]+\.cloudflarestream\.com/eyJ[A-Za-z0-9_.-]+/manifest/video\.m3u8[^"\'\s]*)', VideoSource.SKILLSHARE),
         # Vimeo player iframe
         (r'(https?://player\.vimeo\.com/video/\d+[^"\'\s]*)', VideoSource.VIMEO),
         # Vimeo CDN m3u8
@@ -296,13 +323,14 @@ class WebpageScraper:
                     seen_urls.add(url)
                     found.append((url, source))
 
-        # Prioritize: GetCourse > Kinescope > Vimeo > YouTube > generic m3u8
+        # Prioritize: GetCourse > Kinescope > Skillshare > Vimeo > YouTube > generic m3u8
         priority = {
             VideoSource.GETCOURSE: 0,
             VideoSource.KINESCOPE: 1,
-            VideoSource.VIMEO: 2,
-            VideoSource.YOUTUBE: 3,
-            VideoSource.DIRECT_STREAM: 4,
+            VideoSource.SKILLSHARE: 2,
+            VideoSource.VIMEO: 3,
+            VideoSource.YOUTUBE: 4,
+            VideoSource.DIRECT_STREAM: 5,
         }
         found.sort(key=lambda x: priority.get(x[1], 99))
 
