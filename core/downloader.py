@@ -220,6 +220,8 @@ class VimeoDownloader:
         # Display detection results based on source
         if source == VideoSource.YOUTUBE:
             console.print(f"[green]✓ YouTube video detected[/green] (ID: {video_id})")
+        elif source == VideoSource.SKILLSHARE:
+            console.print(f"[green]✓ Skillshare/Cloudflare stream detected[/green] (ID: {video_id}...)")
         elif source == VideoSource.GETCOURSE:
             console.print(f"[green]✓ GetCourse stream detected[/green] (ID: {video_id}...)")
         elif source == VideoSource.KINESCOPE:
@@ -243,8 +245,8 @@ class VimeoDownloader:
             if video_hash:
                 console.print(f"[green]✓ Video hash:[/green] {video_hash}")
 
-        # Detect type (skip for YouTube/Kinescope/GetCourse/direct streams - yt-dlp handles them)
-        if source in (VideoSource.YOUTUBE, VideoSource.KINESCOPE, VideoSource.GETCOURSE, VideoSource.DIRECT_STREAM):
+        # Detect type (skip for YouTube/Kinescope/GetCourse/Skillshare/direct streams - yt-dlp handles them)
+        if source in (VideoSource.YOUTUBE, VideoSource.KINESCOPE, VideoSource.GETCOURSE, VideoSource.SKILLSHARE, VideoSource.DIRECT_STREAM):
             video_type = VimeoType.PUBLIC
         else:
             video_type = self.detector.detect_type()

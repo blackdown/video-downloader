@@ -2,9 +2,58 @@
 Command construction for different download methods.
 """
 
+import os
 import sys
+from pathlib import Path
 from typing import List, Optional
 from .detector import VimeoType, VideoSource
+
+
+def get_bundled_path(tool_name: str) -> Optional[str]:
+    """
+    Find bundled executable path for a tool.
+    Checks for bundled versions when running as a PyInstaller exe.
+    """
+    # When running as bundled exe, check relative paths
+    if getattr(sys, 'frozen', False):
+        # Running as compiled exe
+        base_path = Path(sys._MEIPASS) if hasattr(sys, '_MEIPASS') else Path(sys.executable).parent
+
+        # Check for bundled tools
+        if tool_name == "yt-dlp":
+            for check_path in [
+                base_path / "yt-dlp" / "yt-dlp.exe",
+                base_path / "yt-dlp.exe",
+            ]:
+                if check_path.exists():
+                    return str(check_path)
+        elif tool_name == "ffmpeg":
+            for check_path in [
+                base_path / "ffmpeg" / "ffmpeg.exe",
+                base_path / "ffmpeg.exe",
+            ]:
+                if check_path.exists():
+                    return str(check_path)
+
+    return None
+
+
+def get_ytdlp_command() -> List[str]:
+    """Get the command to run yt-dlp (bundled or module)."""
+    bundled = get_bundled_path("yt-dlp")
+    if bundled:
+        return [bundled]
+    else:
+        return [sys.executable, "-m", "yt_dlp"]
+
+
+def get_ffmpeg_path() -> Optional[str]:
+    """Get path to ffmpeg (bundled or system)."""
+    bundled = get_bundled_path("ffmpeg")
+    if bundled:
+        return bundled
+    # Fall back to system ffmpeg
+    return None
 
 
 class CommandBuilder:
@@ -24,8 +73,8 @@ class CommandBuilder:
 
     def get_url(self) -> str:
         """Get the appropriate URL for download."""
-        # For direct stream URLs (m3u8, Kinescope, GetCourse), use the original URL
-        if self.source in (VideoSource.DIRECT_STREAM, VideoSource.KINESCOPE, VideoSource.GETCOURSE) and self.original_url:
+        # For direct stream URLs (m3u8, Kinescope, GetCourse, Skillshare), use the original URL
+        if self.source in (VideoSource.DIRECT_STREAM, VideoSource.KINESCOPE, VideoSource.GETCOURSE, VideoSource.SKILLSHARE) and self.original_url:
             return self.original_url
         # For YouTube, use the standard watch URL
         if self.source == VideoSource.YOUTUBE:
@@ -35,8 +84,8 @@ class CommandBuilder:
         return f"https://vimeo.com/{self.video_id}"
 
     def is_direct_stream(self) -> bool:
-        """Check if this is a direct stream URL (m3u8, Kinescope, GetCourse, etc.)."""
-        return self.source in (VideoSource.DIRECT_STREAM, VideoSource.KINESCOPE, VideoSource.GETCOURSE)
+        """Check if this is a direct stream URL (m3u8, Kinescope, GetCourse, Skillshare, etc.)."""
+        return self.source in (VideoSource.DIRECT_STREAM, VideoSource.KINESCOPE, VideoSource.GETCOURSE, VideoSource.SKILLSHARE)
     
     def build_ytdlp_command(self, output_path: str = ".", use_aria2: bool = False, fast: bool = False, filename: str = None) -> List[str]:
         """Build yt-dlp command with appropriate flags."""
@@ -47,13 +96,22 @@ class CommandBuilder:
         # Use more concurrent fragments in fast mode
         concurrent = "32" if fast else "16"
 
-        cmd = [
-            sys.executable, "-m", "yt_dlp",
+        # Start with yt-dlp command (bundled or module)
+        cmd = get_ytdlp_command() + [
             "-N", concurrent,  # Parallel fragments
             "--no-warnings",   # Hide warnings
             "--progress",      # Ensure progress bar shows
             "--newline",       # Output progress on new lines (cleaner)
+            "--restrict-filenames",  # Sanitize filenames (remove special chars)
+            "--replace-in-metadata", "title", r"[\n\r]", " ",  # Remove newlines from title
+            "--replace-in-metadata", "title", r"\s+", " ",  # Collapse multiple spaces
+            "--windows-filenames",  # Ensure Windows-safe filenames
         ]
+
+        # Add ffmpeg path if bundled
+        ffmpeg_path = get_ffmpeg_path()
+        if ffmpeg_path:
+            cmd.extend(["--ffmpeg-location", ffmpeg_path])
         
         # Add cookies if available, otherwise explicitly disable
         if self.cookie_string:
@@ -101,8 +159,15 @@ class CommandBuilder:
 
         # Output path and filename
         if filename:
-            # User specified filename
-            cmd.extend(["-o", f"{output_path}/{filename}.%(ext)s"])
+            # Sanitize user-specified filename (remove newlines, invalid chars)
+            safe_filename = filename.replace('\n', ' ').replace('\r', ' ')
+            safe_filename = safe_filename.replace('<', '').replace('>', '')
+            safe_filename = safe_filename.replace(':', '-').replace('"', "'")
+            safe_filename = safe_filename.replace('/', '-').replace('\\', '-')
+            safe_filename = safe_filename.replace('|', '-').replace('?', '').replace('*', '')
+            safe_filename = ' '.join(safe_filename.split())  # Collapse whitespace
+            safe_filename = safe_filename.strip()
+            cmd.extend(["-o", f"{output_path}/{safe_filename}.%(ext)s"])
         elif self.is_direct_stream():
             # Direct stream - use timestamp-based name with source prefix
             from datetime import datetime

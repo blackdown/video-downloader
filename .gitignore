@@ -5,15 +5,19 @@ DEV_NOTES.md
 .downloading
 .downloading/*
 .env
-core/__pycache__/
-core/__pycache__/*
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
 
 # PyInstaller build artifacts
 build/
 dist/
 *.spec
+bundle/
+*.zip
 nul
- *.pyc
- *__*
+settings.json
 video_dl_gui.log
 *.log

@@ -113,6 +113,12 @@ class CookieManager:
 
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
 
+            # Check for common errors
+            if result.stderr:
+                if "Could not copy" in result.stderr and "cookie database" in result.stderr:
+                    print(f"Warning: Cannot access {self.browser} cookies - browser may be running. Close it and try again.")
+                    return {}
+
             # Parse the Netscape cookie file
             cookies = {}
             if os.path.exists(cookie_file):
@@ -138,7 +144,11 @@ class CookieManager:
             return cookies
 
         except Exception as e:
-            print(f"Warning: yt-dlp cookie extraction failed: {e}")
+            error_msg = str(e)
+            if "Could not copy" in error_msg and "cookie database" in error_msg:
+                print(f"Warning: Cannot access browser cookies - browser may be running. Close {self.browser} and try again.")
+            else:
+                print(f"Warning: yt-dlp cookie extraction failed: {e}")
             # Clean up temp file if it exists
             try:
                 if 'cookie_file' in locals() and os.path.exists(cookie_file):
@@ -172,7 +182,15 @@ class CookieManager:
     
     def get_cookie_string_for_ytdlp(self) -> str:
         """Get the cookie browser string for yt-dlp --cookies-from-browser flag."""
-        profile = self.get_chrome_profile_number()
-        if profile:
-            return f"chrome:{profile}"
-        return "chrome"
+        if self.browser == "chrome":
+            profile = self.get_chrome_profile_number()
+            if profile:
+                return f"chrome:{profile}"
+            return "chrome"
+        elif self.browser == "firefox":
+            # Firefox doesn't need profile specification for default profile
+            return "firefox"
+        elif self.browser == "edge":
+            return "edge"
+        else:
+            return self.browser

@@ -44,6 +44,7 @@ class QueueItem:
             "vimeo": "VM",
             "kinescope": "KS",
             "getcourse": "GC",
+            "skillshare": "CF",  # Cloudflare Stream
             "direct_stream": "M3U8",
         }
         if self.platform:

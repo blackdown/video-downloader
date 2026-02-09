@@ -123,32 +123,55 @@ class SettingsPanel(ctk.CTkFrame):
         )
         fast_check.grid(row=row + 1, column=0, sticky="w", pady=2)
 
-        # Use cookies checkbox (inverted - checked means use cookies)
+        # Cookies section
+        cookies_label = ctk.CTkLabel(
+            self,
+            text="Download Cookies:",
+            font=ctk.CTkFont(size=12, weight="bold"),
+        )
+        cookies_label.grid(row=row + 2, column=0, sticky="w", pady=(12, 2))
+
+        # Use cookies checkbox
         self._use_cookies_var = ctk.BooleanVar()
         cookies_check = ctk.CTkCheckBox(
             self,
-            text="Use browser cookies",
+            text="Extract cookies from browser",
             variable=self._use_cookies_var,
             command=self._on_option_changed,
         )
-        cookies_check.grid(row=row + 2, column=0, sticky="w", pady=2)
+        cookies_check.grid(row=row + 3, column=0, sticky="w", pady=2)
 
-        # Browser selection
+        # Browser selection (only shown when cookies enabled)
         browser_frame = ctk.CTkFrame(self, fg_color="transparent")
-        browser_frame.grid(row=row + 3, column=0, sticky="w", pady=(8, 2))
+        browser_frame.grid(row=row + 4, column=0, sticky="w", pady=2, padx=(24, 0))
 
-        browser_label = ctk.CTkLabel(browser_frame, text="Browser:")
-        browser_label.pack(side="left", padx=(0, 8))
+        browser_hint = ctk.CTkLabel(
+            browser_frame,
+            text="From:",
+            font=ctk.CTkFont(size=11),
+            text_color="gray60",
+        )
+        browser_hint.pack(side="left", padx=(0, 4))
 
         self._browser_var = ctk.StringVar(value="chrome")
-        browser_dropdown = ctk.CTkOptionMenu(
+        self._browser_dropdown = ctk.CTkOptionMenu(
             browser_frame,
             variable=self._browser_var,
             values=["chrome", "firefox", "edge"],
-            width=100,
+            width=90,
             command=lambda _: self._on_option_changed(),
         )
-        browser_dropdown.pack(side="left")
+        self._browser_dropdown.pack(side="left")
+
+        browser_note = ctk.CTkLabel(
+            browser_frame,
+            text="(close browser first)",
+            font=ctk.CTkFont(size=10),
+            text_color="gray50",
+        )
+        browser_note.pack(side="left", padx=(6, 0))
+
+        self._browser_frame = browser_frame
 
     def _browse_folder(self, entry: ctk.CTkEntry, setting_key: str) -> None:
         """Open folder browser dialog."""
@@ -172,6 +195,13 @@ class SettingsPanel(ctk.CTkFrame):
         self.settings.fast_mode = self._fast_var.get()
         self.settings.no_cookies = not self._use_cookies_var.get()  # Inverted
         self.settings.browser = self._browser_var.get()
+
+        # Show/hide browser dropdown based on cookies checkbox
+        if self._use_cookies_var.get():
+            self._browser_frame.grid()
+        else:
+            self._browser_frame.grid_remove()
+
         self._notify_changed()
 
     def _notify_changed(self) -> None:
@@ -192,6 +222,12 @@ class SettingsPanel(ctk.CTkFrame):
         self._fast_var.set(self.settings.fast_mode)
         self._use_cookies_var.set(not self.settings.no_cookies)  # Inverted
         self._browser_var.set(self.settings.browser)
+
+        # Show/hide browser dropdown based on cookies setting
+        if not self.settings.no_cookies:
+            self._browser_frame.grid()
+        else:
+            self._browser_frame.grid_remove()
 
     def get_settings(self) -> AppSettings:
         """Get current settings."""

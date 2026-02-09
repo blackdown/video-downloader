@@ -77,7 +77,11 @@ class URLInput(ctk.CTkFrame):
         """Handle Add button click."""
         url = self.url_entry.get().strip()
         if url:
+            # Sanitize filename - remove newlines and other problematic characters
             filename = self.filename_entry.get().strip() or None
+            if filename:
+                # Remove newlines, collapse whitespace
+                filename = ' '.join(filename.split())
             self._on_url_submit(url, filename)
             self.url_entry.delete(0, "end")
             self.filename_entry.delete(0, "end")

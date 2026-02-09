@@ -110,6 +110,7 @@ class QueueItemWidget(ctk.CTkFrame):
             "VM": "#1ab7ea",  # Vimeo blue
             "KS": "#6b5b95",  # Kinescope purple
             "GC": "#ff6600",  # GetCourse orange
+            "CF": "#f6821f",  # Cloudflare orange
             "M3U8": "#333333",  # Direct stream gray
         }
         badge_color = platform_colors.get(platform_text, "gray40")
