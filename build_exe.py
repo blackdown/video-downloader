@@ -115,13 +115,12 @@ def create_spec_file(ffmpeg_dir, ytdlp_dir, chromium_dir):
     spec_content = f'''# -*- mode: python ; coding: utf-8 -*-
 import os
 import sys
+from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 
 block_cipher = None
 
 # Data files to include
-datas = [
-    # Include the core and gui packages
-]
+datas = collect_data_files('rich')  # rich uses dynamic imports for unicode data
 
 # Binary files to include
 binaries = []
@@ -154,6 +153,7 @@ a = Analysis(
         'requests',
         'PIL',
         'PIL._tkinter_finder',
+        *collect_submodules('rich'),
     ],
     hookspath=[],
     hooksconfig={{}},

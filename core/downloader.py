@@ -25,8 +25,9 @@ class ProgressParser:
 
     # Pattern for yt-dlp progress lines like:
     # [download]  45.2% of 100.00MiB at 5.00MiB/s ETA 00:10
+    # Requires numeric speed and ETA; Unknown values fall through to SIMPLE_PROGRESS_PATTERN
     PROGRESS_PATTERN = re.compile(
-        r'\[download\]\s+(\d+\.?\d*)%\s+of\s+~?([\d.]+)(\w+)\s+at\s+([\d.]+)(\w+)/s\s+ETA\s+(\d+:\d+)'
+        r'\[download\]\s+(\d+\.?\d*)%\s+of\s+~?([\d.]+\s*\w+)\s+at\s+([\d.]+\s*\w+/s)\s+ETA\s+(\d[\d:]+)'
     )
     # Simpler pattern that just captures percentage (fallback for varied formats)
     SIMPLE_PROGRESS_PATTERN = re.compile(
@@ -87,16 +88,8 @@ class ProgressParser:
             match = self.PROGRESS_PATTERN.search(line)
             if match:
                 self.percent = float(match.group(1))
-                size_val = float(match.group(2))
-                size_unit = match.group(3)
-                speed_val = float(match.group(4))
-                speed_unit = match.group(5)
-                self.eta = match.group(6)
-
-                # Convert to bytes for display
-                self.total_size = self._to_bytes(size_val, size_unit)
-                self.downloaded = int(self.total_size * self.percent / 100)
-                self.speed = f"{speed_val:.1f} {speed_unit}/s"
+                self.speed = match.group(3).strip()   # e.g. "5.00MiB/s"
+                self.eta = match.group(4).strip()     # e.g. "00:30"
                 self.status = "Downloading"
                 updated = True
 

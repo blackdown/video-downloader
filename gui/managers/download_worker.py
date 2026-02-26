@@ -202,6 +202,10 @@ class DownloadWorker:
         parser = ProgressParser(progress_callback=progress_callback)
 
         try:
+            # CREATE_NO_WINDOW prevents a blank console window appearing in the GUI build
+            import sys as _sys
+            _flags = subprocess.CREATE_NO_WINDOW if _sys.platform == "win32" else 0
+
             self._process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -210,10 +214,12 @@ class DownloadWorker:
                 bufsize=1,
                 encoding="utf-8",
                 errors="replace",
+                creationflags=_flags,
             )
             self.log.debug(f"[{self.item.id}] Process started with PID: {self._process.pid}")
 
             output_lines = []
+            first_download_line_logged = False
             for line in self._process.stdout:
                 line = line.rstrip()
                 if line:
@@ -223,6 +229,10 @@ class DownloadWorker:
                         self.log.error(f"[{self.item.id}] yt-dlp: {line}")
                     elif "warning" in line.lower() or "WARNING" in line:
                         self.log.warning(f"[{self.item.id}] yt-dlp: {line}")
+                    elif "[download]" in line and not first_download_line_logged:
+                        # Log the first download progress line so we can verify the format
+                        self.log.debug(f"[{self.item.id}] yt-dlp first download line: {repr(line)}")
+                        first_download_line_logged = True
 
                 if self._cancel_event.is_set():
                     self._process.terminate()

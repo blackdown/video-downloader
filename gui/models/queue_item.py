@@ -67,7 +67,7 @@ class QueueItem:
 
     def get_display_title(self, max_length: int = 40) -> str:
         """Get title for display, truncated if needed."""
-        title = self.title or self.url
+        title = self.title or self.custom_filename or self.url
         if len(title) > max_length:
             return title[:max_length - 3] + "..."
         return title
