@@ -21,3 +21,6 @@ nul
 settings.json
 video_dl_gui.log
 *.log
+/venv
+/venv_arm
+.DS_Store
