@@ -21,12 +21,18 @@ if TYPE_CHECKING:
 def _setup_bundled_browsers():
     """Set up Playwright browsers path for bundled exe."""
     if getattr(sys, 'frozen', False):
-        # Running as bundled exe
+        # Running as bundled exe — always point Playwright at the sibling
+        # playwright-browsers/ folder, whether or not it exists yet.
+        # If we don't set this, Playwright falls back to looking inside the
+        # PyInstaller temp dir (_MEI…) where no browsers are ever placed.
         exe_dir = Path(sys.executable).parent
         browsers_dir = exe_dir / "playwright-browsers"
-        if browsers_dir.exists() and "PLAYWRIGHT_BROWSERS_PATH" not in os.environ:
+        if "PLAYWRIGHT_BROWSERS_PATH" not in os.environ:
             os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(browsers_dir)
-            print(f"[Playwright] Using bundled browsers: {browsers_dir}")
+            if browsers_dir.exists():
+                print(f"[Playwright] Using bundled browsers: {browsers_dir}")
+            else:
+                print(f"[Playwright] Browsers path set to: {browsers_dir} (not installed yet)")
 
 
 # Set up browsers path before importing playwright
@@ -66,6 +72,60 @@ def reset_detection_profile() -> None:
         print(f"[Setup] Profile reset - will need to log in again")
 
 
+def are_playwright_browsers_installed() -> bool:
+    """Return True if Playwright Chromium is present in PLAYWRIGHT_BROWSERS_PATH."""
+    import subprocess as _sp
+    browsers_path_env = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+    if browsers_path_env:
+        p = Path(browsers_path_env)
+        if p.exists():
+            for item in p.iterdir():
+                if item.is_dir() and "chromium" in item.name.lower():
+                    return True
+    # Also ask playwright itself — it exits 0 only when all required browsers are ready
+    try:
+        result = _sp.run(
+            [sys.executable, "-m", "playwright", "install", "--dry-run", "chromium"],
+            capture_output=True, text=True, timeout=10,
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
+def install_playwright_browsers(
+    on_progress: Optional[Callable[[str], None]] = None
+) -> "tuple[bool, str]":
+    """
+    Download and install Playwright Chromium.
+
+    Returns (success, message).  Safe to call from a background thread.
+    """
+    import subprocess as _sp
+
+    try:
+        if on_progress:
+            on_progress("Downloading Chromium browser (this may take a few minutes)…")
+        print("[Playwright] Running: playwright install chromium")
+        result = _sp.run(
+            [sys.executable, "-m", "playwright", "install", "chromium"],
+            capture_output=True,
+            text=True,
+            timeout=600,  # 10-minute ceiling for slow connections
+        )
+        if result.returncode == 0:
+            print("[Playwright] Chromium installed successfully.")
+            return True, "Chromium installed successfully!"
+        else:
+            msg = (result.stderr or result.stdout or "unknown error").strip()
+            print(f"[Playwright] Installation failed: {msg[:300]}")
+            return False, f"Browser installation failed: {msg[:200]}"
+    except _sp.TimeoutExpired:
+        return False, "Browser download timed out. Check your internet connection and try again."
+    except Exception as e:
+        return False, f"Browser installation error: {e}"
+
+
 def setup_detection_profile(on_complete: Optional[Callable[[bool, str], None]] = None) -> None:
     """
     Set up the detection profile by launching a browser for the user to log in.
@@ -80,6 +140,18 @@ def setup_detection_profile(on_complete: Optional[Callable[[bool, str], None]] =
 
     def run_setup():
         try:
+            # Auto-install Chromium if it's missing (common on first run of the exe)
+            if not are_playwright_browsers_installed():
+                print("[Setup] Chromium not found — installing now…")
+                if on_complete:
+                    # Temporarily surface install progress via the same callback
+                    pass
+                success, msg = install_playwright_browsers()
+                if not success:
+                    if on_complete:
+                        on_complete(False, f"Could not install Chromium browser: {msg}")
+                    return
+
             profile_dir = get_detection_profile_dir()
             profile_dir.mkdir(parents=True, exist_ok=True)
 

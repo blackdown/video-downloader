@@ -378,15 +378,23 @@ class VideoDetectDialog(ctk.CTkToplevel):
 
     def _on_setup_profile(self) -> None:
         """Handle Setup Profile button click."""
-        from core.browser_detect import setup_detection_profile, reset_detection_profile
+        from core.browser_detect import (
+            setup_detection_profile, reset_detection_profile,
+            are_playwright_browsers_installed,
+        )
 
         self.log.info("[Detect] Starting profile setup...")
 
         # Reset the profile marker so we can do a fresh setup
         reset_detection_profile()
 
-        self.setup_button.configure(state="disabled", text="Setting up...")
-        self._set_status("Opening browser - log in to your video sites, then close the browser...")
+        if are_playwright_browsers_installed():
+            status_msg = "Opening browser — log in to your video sites, then close the browser…"
+        else:
+            status_msg = "Downloading Chromium browser (one-time, may take a few minutes)…"
+
+        self.setup_button.configure(state="disabled", text="Setting up…")
+        self._set_status(status_msg)
 
         def on_complete(success: bool, message: str):
             # Schedule UI update on main thread
@@ -407,7 +415,15 @@ class VideoDetectDialog(ctk.CTkToplevel):
             self._update_placeholder()
         else:
             self.log.error(f"[Detect] Profile setup failed: {message}")
-            self._set_status(message, error=True)
+            # Give a friendlier message when the Chromium executable is simply absent
+            if "executable doesn't exist" in message.lower() or "could not install chromium" in message.lower():
+                display = (
+                    "Chromium browser not found. Click 'Setup Profile' to retry "
+                    "(requires an internet connection for first-time download)."
+                )
+            else:
+                display = message
+            self._set_status(display, error=True)
             self.setup_button.configure(text="Setup Profile")
 
     def _on_select_all(self) -> None:
