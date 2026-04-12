@@ -62,7 +62,9 @@ class CommandBuilder:
     def __init__(self, video_id: str, video_hash: Optional[str],
                  video_type: VimeoType, password: Optional[str] = None,
                  cookie_string: Optional[str] = None, original_url: Optional[str] = None,
-                 source: VideoSource = VideoSource.VIMEO):
+                 source: VideoSource = VideoSource.VIMEO,
+                 cookies_file: Optional[str] = None,
+                 referer_url: Optional[str] = None):
         self.video_id = video_id
         self.video_hash = video_hash
         self.video_type = video_type
@@ -70,6 +72,8 @@ class CommandBuilder:
         self.cookie_string = cookie_string
         self.original_url = original_url
         self.source = source
+        self.cookies_file = cookies_file  # Path to Netscape cookies file (overrides cookie_string)
+        self.referer_url = referer_url    # Source page URL used as HTTP Referer
 
     def get_url(self) -> str:
         """Get the appropriate URL for download."""
@@ -113,8 +117,10 @@ class CommandBuilder:
         if ffmpeg_path:
             cmd.extend(["--ffmpeg-location", ffmpeg_path])
         
-        # Add cookies if available, otherwise explicitly disable
-        if self.cookie_string:
+        # Add cookies: prefer a pre-built cookies file, then fall back to browser extraction
+        if self.cookies_file:
+            cmd.extend(["--cookies", self.cookies_file])
+        elif self.cookie_string:
             cmd.extend(["--cookies-from-browser", self.cookie_string])
         else:
             cmd.append("--no-cookies-from-browser")
@@ -123,8 +129,12 @@ class CommandBuilder:
         if self.password and self.video_type == VimeoType.PASSWORD_PROTECTED:
             cmd.extend(["--video-password", self.password])
 
-        # Add referer (skip for direct streams and YouTube)
-        if not self.is_direct_stream() and self.source != VideoSource.YOUTUBE:
+        # Add referer
+        if self.referer_url and self.is_direct_stream():
+            # For direct streams (Mux, etc.), use the source page URL as referer
+            cmd.extend(["--referer", self.referer_url])
+        elif not self.is_direct_stream() and self.source != VideoSource.YOUTUBE:
+            # For Vimeo, use the video URL itself as referer
             cmd.extend(["--referer", referer])
 
         # Quality and format selection

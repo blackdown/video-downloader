@@ -44,6 +44,9 @@ class SettingsPanel(ctk.CTkFrame):
         # Options section
         self._create_options_section(row=4)
 
+        # Login profile section
+        self._create_profile_section(row=10)
+
     def _create_folder_section(self, label: str, setting_key: str, row: int) -> None:
         """Create a folder selection section."""
         label_widget = ctk.CTkLabel(
@@ -126,52 +129,98 @@ class SettingsPanel(ctk.CTkFrame):
         # Cookies section
         cookies_label = ctk.CTkLabel(
             self,
-            text="Download Cookies:",
+            text="Authentication:",
             font=ctk.CTkFont(size=12, weight="bold"),
         )
         cookies_label.grid(row=row + 2, column=0, sticky="w", pady=(12, 2))
 
-        # Use cookies checkbox
         self._use_cookies_var = ctk.BooleanVar()
         cookies_check = ctk.CTkCheckBox(
             self,
-            text="Extract cookies from browser",
+            text="Use login profile cookies",
             variable=self._use_cookies_var,
             command=self._on_option_changed,
         )
         cookies_check.grid(row=row + 3, column=0, sticky="w", pady=2)
 
-        # Browser selection (only shown when cookies enabled)
-        browser_frame = ctk.CTkFrame(self, fg_color="transparent")
-        browser_frame.grid(row=row + 4, column=0, sticky="w", pady=2, padx=(24, 0))
+    def _create_profile_section(self, row: int) -> None:
+        """Create login profile section."""
+        label = ctk.CTkLabel(
+            self,
+            text="Login Profile:",
+            font=ctk.CTkFont(size=12, weight="bold"),
+        )
+        label.grid(row=row, column=0, sticky="w", pady=(12, 2))
 
-        browser_hint = ctk.CTkLabel(
-            browser_frame,
-            text="From:",
+        profile_frame = ctk.CTkFrame(self, fg_color="transparent")
+        profile_frame.grid(row=row + 1, column=0, sticky="ew", pady=(0, 4))
+        profile_frame.grid_columnconfigure(0, weight=1)
+
+        self._profile_status_label = ctk.CTkLabel(
+            profile_frame,
+            text="",
             font=ctk.CTkFont(size=11),
-            text_color="gray60",
+            anchor="w",
         )
-        browser_hint.pack(side="left", padx=(0, 4))
+        self._profile_status_label.grid(row=0, column=0, sticky="w")
 
-        self._browser_var = ctk.StringVar(value="chrome")
-        self._browser_dropdown = ctk.CTkOptionMenu(
-            browser_frame,
-            variable=self._browser_var,
-            values=["chrome", "firefox", "edge"],
-            width=90,
-            command=lambda _: self._on_option_changed(),
+        self._profile_btn = ctk.CTkButton(
+            profile_frame,
+            text="Setup Profile",
+            height=28,
+            width=120,
+            command=self._on_setup_profile,
         )
-        self._browser_dropdown.pack(side="left")
+        self._profile_btn.grid(row=1, column=0, sticky="w", pady=(4, 0))
 
-        browser_note = ctk.CTkLabel(
-            browser_frame,
-            text="(close browser first)",
+        hint = ctk.CTkLabel(
+            self,
+            text="Log in to member sites once.\nCookies are used automatically for all downloads.",
             font=ctk.CTkFont(size=10),
             text_color="gray50",
+            justify="left",
+            anchor="w",
         )
-        browser_note.pack(side="left", padx=(6, 0))
+        hint.grid(row=row + 2, column=0, sticky="w")
 
-        self._browser_frame = browser_frame
+        self._refresh_profile_status()
+
+    def _refresh_profile_status(self) -> None:
+        """Update the profile status label and button text."""
+        try:
+            from core.browser_detect import is_detection_profile_setup
+            ready = is_detection_profile_setup()
+        except Exception:
+            ready = False
+
+        if ready:
+            self._profile_status_label.configure(
+                text="Profile: ready",
+                text_color="#4caf50",
+            )
+            self._profile_btn.configure(text="Re-setup Profile", fg_color="gray40", hover_color="gray50")
+        else:
+            self._profile_status_label.configure(
+                text="Profile: not set up",
+                text_color="gray60",
+            )
+            self._profile_btn.configure(text="Setup Profile", fg_color=("#3a7ebf", "#1f538d"), hover_color=("#325882", "#14375e"))
+
+    def _on_setup_profile(self) -> None:
+        """Launch the profile setup browser."""
+        from core.browser_detect import setup_detection_profile, reset_detection_profile
+        reset_detection_profile()
+        self._profile_btn.configure(state="disabled", text="Setting up...")
+        self._profile_status_label.configure(text="Profile: browser open — log in then close it", text_color="gray60")
+
+        def on_complete(success: bool, message: str):
+            self.after(0, lambda: self._on_setup_complete(success, message))
+
+        setup_detection_profile(on_complete=on_complete)
+
+    def _on_setup_complete(self, success: bool, message: str) -> None:
+        self._profile_btn.configure(state="normal")
+        self._refresh_profile_status()
 
     def _browse_folder(self, entry: ctk.CTkEntry, setting_key: str) -> None:
         """Open folder browser dialog."""
@@ -194,14 +243,6 @@ class SettingsPanel(ctk.CTkFrame):
         """Handle option checkbox change."""
         self.settings.fast_mode = self._fast_var.get()
         self.settings.no_cookies = not self._use_cookies_var.get()  # Inverted
-        self.settings.browser = self._browser_var.get()
-
-        # Show/hide browser dropdown based on cookies checkbox
-        if self._use_cookies_var.get():
-            self._browser_frame.grid()
-        else:
-            self._browser_frame.grid_remove()
-
         self._notify_changed()
 
     def _notify_changed(self) -> None:
@@ -221,13 +262,6 @@ class SettingsPanel(ctk.CTkFrame):
         # Options
         self._fast_var.set(self.settings.fast_mode)
         self._use_cookies_var.set(not self.settings.no_cookies)  # Inverted
-        self._browser_var.set(self.settings.browser)
-
-        # Show/hide browser dropdown based on cookies setting
-        if not self.settings.no_cookies:
-            self._browser_frame.grid()
-        else:
-            self._browser_frame.grid_remove()
 
     def get_settings(self) -> AppSettings:
         """Get current settings."""

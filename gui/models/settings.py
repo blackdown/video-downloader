@@ -12,7 +12,7 @@ from typing import Optional
 class AppSettings:
     """Application settings that persist between sessions."""
 
-    output_folder: str = "."
+    output_folder: str = field(default_factory=lambda: str(Path.home() / "Videos"))
     temp_folder: str = ".downloading"
     quality_cap_1080p: bool = False
     fast_mode: bool = False

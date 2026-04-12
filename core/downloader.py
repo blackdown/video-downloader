@@ -149,12 +149,13 @@ class VimeoDownloader:
     
     def __init__(self, url: str, password: Optional[str] = None,
                  browser: str = "chrome", profile: Optional[str] = None,
-                 skip_cookies: bool = False):
+                 skip_cookies: bool = False, referer_url: Optional[str] = None):
         self.url = url
         self.password = password
         self.browser = browser
         self.profile = profile
         self.skip_cookies = skip_cookies
+        self.referer_url = referer_url
 
         self.detector = None
         self.cookie_manager = None
@@ -245,12 +246,25 @@ class VimeoDownloader:
             video_type = self.detector.detect_type()
             console.print(f"[green]✓ Video type:[/green] {video_type.value}")
         
-        # Build command
-        cookie_string = None if self.skip_cookies else self.cookie_manager.get_cookie_string_for_ytdlp()
+        # Build command — prefer detection profile cookies file if browser extraction won't work
+        cookie_string = None
+        cookies_file = None
+        if not self.skip_cookies:
+            domain = urlparse(self.url).netloc
+            # Try detection profile cookies first (works without browser open, no admin needed)
+            cookies_file = self.cookie_manager.get_detection_profile_cookies_file(domain)
+            if cookies_file:
+                console.print(f"[dim]Using detection profile cookies for {domain}[/dim]")
+            elif cookies:
+                # Browser extraction succeeded earlier — let yt-dlp use the same browser
+                cookie_string = self.cookie_manager.get_cookie_string_for_ytdlp()
+            # else: both failed — pass neither, yt-dlp will use --no-cookies-from-browser
+
         self.command_builder = CommandBuilder(
             video_id, video_hash, video_type,
             self.password, cookie_string, original_url=self.url,
-            source=source
+            source=source, cookies_file=cookies_file,
+            referer_url=self.referer_url,
         )
         
         # Show warnings

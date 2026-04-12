@@ -17,12 +17,14 @@ class URLInput(ctk.CTkFrame):
         master,
         on_url_submit: Callable[[str, Optional[str]], None],
         on_batch_file: Callable[[str], None],
+        on_url_submit_with_referer: Optional[Callable[[str, Optional[str], Optional[str]], None]] = None,
         **kwargs
     ):
         super().__init__(master, **kwargs)
 
         self._on_url_submit = on_url_submit
         self._on_batch_file = on_batch_file
+        self._on_url_submit_with_referer = on_url_submit_with_referer
 
         self._setup_ui()
 
@@ -36,6 +38,16 @@ class URLInput(ctk.CTkFrame):
         )
         self.url_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
         self.url_entry.bind("<Return>", self._on_entry_submit)
+
+        # Source page entry (optional — used as Referer for direct streams)
+        self.referer_entry = ctk.CTkEntry(
+            self,
+            placeholder_text="Source page URL (optional)",
+            width=200,
+            height=36,
+        )
+        self.referer_entry.pack(side="left", padx=(0, 8))
+        self.referer_entry.bind("<Return>", self._on_entry_submit)
 
         # Filename entry (optional)
         self.filename_entry = ctk.CTkEntry(
@@ -75,15 +87,18 @@ class URLInput(ctk.CTkFrame):
 
     def _on_add_clicked(self) -> None:
         """Handle Add button click."""
-        url = self.url_entry.get().strip()
+        url = ''.join(self.url_entry.get().split())  # Strip ALL whitespace including newlines
         if url:
-            # Sanitize filename - remove newlines and other problematic characters
+            referer = ''.join(self.referer_entry.get().split()) or None
             filename = self.filename_entry.get().strip() or None
             if filename:
-                # Remove newlines, collapse whitespace
                 filename = ' '.join(filename.split())
-            self._on_url_submit(url, filename)
+            if self._on_url_submit_with_referer:
+                self._on_url_submit_with_referer(url, filename, referer)
+            else:
+                self._on_url_submit(url, filename)
             self.url_entry.delete(0, "end")
+            self.referer_entry.delete(0, "end")
             self.filename_entry.delete(0, "end")
 
     def _on_batch_clicked(self) -> None:

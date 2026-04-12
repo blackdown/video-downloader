@@ -6,3 +6,5 @@ click>=8.1.0
 rich>=13.0.0
 customtkinter>=5.2.0
 playwright>=1.40.0  # Optional: for browser-based video detection
+playwright-stealth>=2.0.0  # Optional: bypass Cloudflare bot detection
+cryptography>=41.0.0  # For decrypting detection profile cookies

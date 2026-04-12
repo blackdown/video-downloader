@@ -87,6 +87,7 @@ class DownloadWorker:
                 browser=self.settings.browser,
                 profile=self.settings.browser_profile,
                 skip_cookies=skip_cookies,
+                referer_url=self.item.referer_url,
             )
 
             self.log.debug(f"[{self.item.id}] Calling downloader.analyze()")

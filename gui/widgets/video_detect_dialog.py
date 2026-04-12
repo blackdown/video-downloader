@@ -80,7 +80,7 @@ class VideoDetectDialog(ctk.CTkToplevel):
 
         self.url_entry = ctk.CTkEntry(
             input_frame,
-            placeholder_text="https://www.skillshare.com/en/classes/...",
+            placeholder_text="https://example.com/video-page",
             height=36,
         )
         self.url_entry.grid(row=1, column=0, sticky="ew", padx=(8, 4), pady=(0, 8))
@@ -114,20 +114,9 @@ class VideoDetectDialog(ctk.CTkToplevel):
         self.results_scroll.grid(row=0, column=0, sticky="nsew", padx=8, pady=8)
         self.results_scroll.grid_columnconfigure(0, weight=1)
 
-        # Bottom buttons (must be created before _update_placeholder which references setup_button)
+        # Bottom buttons
         button_frame = ctk.CTkFrame(self, fg_color="transparent")
         button_frame.grid(row=3, column=0, sticky="ew", padx=16, pady=(0, 16))
-
-        # Setup profile button
-        self.setup_button = ctk.CTkButton(
-            button_frame,
-            text="Setup Profile",
-            width=100,
-            fg_color="#6b5b95",
-            hover_color="#7b6ba5",
-            command=self._on_setup_profile,
-        )
-        self.setup_button.pack(side="left", padx=(0, 8))
 
         self.select_all_button = ctk.CTkButton(
             button_frame,
@@ -166,7 +155,7 @@ class VideoDetectDialog(ctk.CTkToplevel):
 
     def _on_detect(self) -> None:
         """Start video detection."""
-        url = self.url_entry.get().strip()
+        url = ''.join(self.url_entry.get().split())
         if not url:
             self._set_status("Please enter a URL", error=True)
             return
@@ -354,18 +343,13 @@ class VideoDetectDialog(ctk.CTkToplevel):
         if is_detection_profile_setup():
             text = (
                 "Ready to detect videos.\n\n"
-                "Enter a URL and click Detect.\n"
-                "Your main browser can stay open!"
+                "Enter a URL and click Detect."
             )
-            self.setup_button.configure(text="Re-setup Profile", fg_color="gray40", hover_color="gray50")
         else:
             text = (
-                "Profile not set up yet.\n\n"
-                "Click 'Setup Profile' to open a dedicated browser\n"
-                "and log in to your video sites (one-time setup).\n\n"
-                "After setup, you can detect videos\n"
-                "without closing your main browser.\n\n"
-                "(Uses its own Chromium - not your selected browser)"
+                "Login profile not set up.\n\n"
+                "Go to Settings and click 'Setup Profile'\n"
+                "to log in to your video sites first."
             )
 
         self.placeholder_label = ctk.CTkLabel(
@@ -375,28 +359,6 @@ class VideoDetectDialog(ctk.CTkToplevel):
             text_color="gray50",
         )
         self.placeholder_label.grid(row=0, column=0, pady=30)
-
-    def _on_setup_profile(self) -> None:
-        """Handle Setup Profile button click."""
-        from core.browser_detect import setup_detection_profile, reset_detection_profile
-
-        self.log.info("[Detect] Starting profile setup...")
-
-        # Reset the profile marker so we can do a fresh setup
-        reset_detection_profile()
-
-        self.setup_button.configure(state="disabled", text="Setting up...")
-        self._set_status("Opening browser - log in to your video sites, then close the browser...")
-
-        def on_complete(success: bool, message: str):
-            # Schedule UI update on main thread
-            self.after(0, lambda: self._on_setup_complete(success, message))
-
-        setup_detection_profile(on_complete=on_complete)
-
-    def _on_setup_complete(self, success: bool, message: str) -> None:
-        """Handle profile setup completion."""
-        self.setup_button.configure(state="normal")
 
         if success:
             self.log.info(f"[Detect] Profile setup complete")

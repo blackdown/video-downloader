@@ -41,7 +41,7 @@ class QueueManager:
         """Set callback to be called when an item is updated."""
         self._on_item_updated = callback
 
-    def add_url(self, url: str, filename: Optional[str] = None) -> QueueItem:
+    def add_url(self, url: str, filename: Optional[str] = None, referer: Optional[str] = None) -> QueueItem:
         """Add a URL to the queue and start analyzing it."""
         url = url.strip()
         if not url:
@@ -56,7 +56,7 @@ class QueueManager:
                     filename = filename[:-len(ext)]
             filename = filename if filename else None
 
-        item = QueueItem(url=url, custom_filename=filename)
+        item = QueueItem(url=url, custom_filename=filename, referer_url=referer or None)
         self._items[item.id] = item
         self._order.append(item.id)
 

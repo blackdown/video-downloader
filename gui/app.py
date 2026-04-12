@@ -83,6 +83,7 @@ class MainWindow(ctk.CTk):
             url_row,
             on_url_submit=self._on_url_add,
             on_batch_file=self._on_batch_file,
+            on_url_submit_with_referer=self._on_url_add_with_referer,
         )
         self.url_input.grid(row=0, column=0, sticky="ew")
 
@@ -237,10 +238,14 @@ class MainWindow(ctk.CTk):
         self.status_bar.configure(text=status)
 
     def _on_url_add(self, url: str, filename: Optional[str] = None) -> None:
-        """Handle URL addition."""
-        self.log.info(f"Adding URL: {url[:80]}" + (f" with filename: {filename}" if filename else ""))
+        """Handle URL addition (no referer)."""
+        self._on_url_add_with_referer(url, filename, None)
+
+    def _on_url_add_with_referer(self, url: str, filename: Optional[str] = None, referer: Optional[str] = None) -> None:
+        """Handle URL addition with optional referer."""
+        self.log.info(f"Adding URL: {url[:80]}" + (f" with filename: {filename}" if filename else "") + (f" referer: {referer[:60]}" if referer else ""))
         try:
-            item = self.queue_manager.add_url(url, filename)
+            item = self.queue_manager.add_url(url, filename, referer)
             self.queue_list.add_item(item)
             self._update_stream_warning(item)
         except ValueError as e:

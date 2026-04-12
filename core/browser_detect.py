@@ -29,6 +29,37 @@ def _setup_bundled_browsers():
             print(f"[Playwright] Using bundled browsers: {browsers_dir}")
 
 
+def _get_real_browser_exe() -> Optional[str]:
+    """
+    Return the path to a real Chrome or Edge executable, preferring Chrome.
+    Using a real browser binary avoids Cloudflare bot detection.
+    """
+    if os.name == 'nt':
+        candidates = [
+            # Chrome
+            Path(os.environ.get('PROGRAMFILES', 'C:\\Program Files')) / 'Google' / 'Chrome' / 'Application' / 'chrome.exe',
+            Path(os.environ.get('PROGRAMFILES(X86)', 'C:\\Program Files (x86)')) / 'Google' / 'Chrome' / 'Application' / 'chrome.exe',
+            Path(os.environ.get('LOCALAPPDATA', '')) / 'Google' / 'Chrome' / 'Application' / 'chrome.exe',
+            # Edge fallback
+            Path(os.environ.get('PROGRAMFILES(X86)', 'C:\\Program Files (x86)')) / 'Microsoft' / 'Edge' / 'Application' / 'msedge.exe',
+            Path(os.environ.get('PROGRAMFILES', 'C:\\Program Files')) / 'Microsoft' / 'Edge' / 'Application' / 'msedge.exe',
+        ]
+    else:
+        import shutil
+        for cmd in ['google-chrome', 'google-chrome-stable', 'chromium-browser', 'chromium']:
+            found = shutil.which(cmd)
+            if found:
+                print(f"[Detect] Found browser: {found}")
+                return found
+        return None
+
+    for p in candidates:
+        if p.exists():
+            print(f"[Detect] Using browser: {p}")
+            return str(p)
+    return None
+
+
 # Set up browsers path before importing playwright
 _setup_bundled_browsers()
 
@@ -37,6 +68,12 @@ try:
     HAS_PLAYWRIGHT = True
 except ImportError:
     HAS_PLAYWRIGHT = False
+
+try:
+    from playwright_stealth import Stealth
+    HAS_STEALTH = True
+except ImportError:
+    HAS_STEALTH = False
 
 
 # Directory for app-specific browser profile
@@ -73,89 +110,39 @@ def setup_detection_profile(on_complete: Optional[Callable[[bool, str], None]] =
     Args:
         on_complete: Callback(success, message) when setup is complete
     """
-    if not HAS_PLAYWRIGHT:
-        if on_complete:
-            on_complete(False, "Playwright not installed")
-        return
-
     def run_setup():
+        import subprocess
+        import time
+
+        profile_dir = get_detection_profile_dir()
+        profile_dir.mkdir(parents=True, exist_ok=True)
+
+        exe = _get_real_browser_exe()
+        if not exe:
+            if on_complete:
+                on_complete(False, "No Chrome or Edge installation found.")
+            return
+
+        print(f"[Setup] Launching browser (no automation): {exe}")
+        print("")
+        print("=" * 50)
+        print("SETUP: Log in to your video sites in the browser window.")
+        print("Close the browser window when you're done.")
+        print("=" * 50)
+
         try:
-            profile_dir = get_detection_profile_dir()
-            profile_dir.mkdir(parents=True, exist_ok=True)
+            # Launch Chrome/Edge as a plain process — no CDP, invisible to Cloudflare
+            proc = subprocess.Popen([
+                exe,
+                f'--user-data-dir={profile_dir}',
+                '--no-first-run',
+                '--no-default-browser-check',
+                'about:blank',
+            ])
+            print(f"[Setup] Browser open (PID {proc.pid}). Waiting for close...")
+            proc.wait()
+            print("[Setup] Browser closed, saving profile...")
 
-            print("[Setup] Launching browser...")
-
-            with sync_playwright() as p:
-                # Launch Chromium with the dedicated profile
-                # Use stealth settings to avoid bot detection
-                context = p.chromium.launch_persistent_context(
-                    user_data_dir=str(profile_dir),
-                    headless=False,
-                    args=[
-                        '--disable-blink-features=AutomationControlled',
-                        '--disable-dev-shm-usage',
-                        '--no-first-run',
-                        '--no-default-browser-check',
-                    ],
-                    ignore_default_args=['--enable-automation'],
-                    viewport={'width': 1280, 'height': 800},
-                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                )
-
-                # Add stealth script to context (applies to all pages)
-                context.add_init_script("""
-                    Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-                    Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
-                """)
-
-                # Get existing page or create new one
-                if context.pages:
-                    page = context.pages[0]
-                else:
-                    page = context.new_page()
-
-                print("[Setup] Navigating to login page...")
-                page.goto("https://www.skillshare.com/en/login", wait_until="domcontentloaded")
-
-                print("")
-                print("=" * 50)
-                print("SETUP: Log in to your video site in the browser window")
-                print("You can navigate to other sites and log in there too.")
-                print("Close the browser window when you're done.")
-                print("=" * 50)
-                print("")
-
-                # Wait for user to close the browser
-                # Use a simple approach - just keep the context alive
-                import time
-                print("[Setup] Browser is open. Waiting for you to close it...")
-
-                browser_open = True
-                while browser_open:
-                    time.sleep(2)  # Check every 2 seconds
-                    try:
-                        # Check if context is still connected
-                        pages = context.pages
-                        if not pages:
-                            print("[Setup] No pages remaining")
-                            browser_open = False
-                        else:
-                            # Try a simple operation to verify browser is responsive
-                            _ = pages[0].url
-                            print(f"[Setup] Still waiting... (on: {pages[0].url[:50]}...)")
-                    except Exception as e:
-                        error_str = str(e)
-                        print(f"[Setup] Browser check failed: {error_str[:100]}")
-                        # Only exit if it's a "closed" type error
-                        if "closed" in error_str.lower() or "target" in error_str.lower():
-                            browser_open = False
-                        else:
-                            # Some other error, keep waiting
-                            print("[Setup] Continuing to wait...")
-
-                print("[Setup] Browser closed, saving profile...")
-
-            # Mark profile as ready
             (profile_dir / '.profile-ready').touch()
             print("[Setup] Profile saved successfully!")
 
@@ -163,15 +150,9 @@ def setup_detection_profile(on_complete: Optional[Callable[[bool, str], None]] =
                 on_complete(True, "Profile setup complete! You can now detect videos.")
 
         except Exception as e:
-            error_msg = str(e)
-            # If browser was closed normally, that's success
-            if "Target page" in error_msg or "closed" in error_msg.lower():
-                (get_detection_profile_dir() / '.profile-ready').touch()
-                if on_complete:
-                    on_complete(True, "Profile setup complete! You can now detect videos.")
-            else:
-                if on_complete:
-                    on_complete(False, f"Setup failed: {e}")
+            print(f"[Setup] Error: {e}")
+            if on_complete:
+                on_complete(False, f"Setup failed: {e}")
 
     # Run in thread to not block UI
     thread = threading.Thread(target=run_setup, daemon=True)
@@ -199,6 +180,7 @@ class BrowserDetector:
     # URL patterns to capture
     VIDEO_PATTERNS = [
         (r'cloudflarestream\.com/[^/]+/manifest/video\.m3u8', 'cloudflare'),
+        (r'stream\.mux\.com/[^"\'\s?]+\.m3u8', 'mux'),
         (r'player\.vimeo\.com/video/\d+', 'vimeo'),
         (r'vimeocdn\.com/.*\.m3u8', 'vimeo'),
         (r'youtube\.com/watch\?v=', 'youtube'),
@@ -391,25 +373,33 @@ class BrowserDetector:
                 progress_callback(f"Launching {self.browser}...")
 
         with sync_playwright() as p:
+            if HAS_STEALTH:
+                Stealth().hook_playwright_context(p)
+                print("[Detect] Stealth mode active")
+
             # Launch browser with profile
             try:
                 if use_dedicated_profile:
-                    # Use Chromium with dedicated profile (always works, no browser conflicts)
-                    # Use stealth settings to avoid bot detection
-                    print(f"[Detect] Launching Chromium with profile...")
-                    browser = p.chromium.launch_persistent_context(
+                    # Prefer a real browser binary to avoid Cloudflare bot detection
+                    exe = _get_real_browser_exe()
+                    if exe:
+                        print(f"[Detect] Launching with real browser: {exe}")
+                    else:
+                        print(f"[Detect] Launching Playwright Chromium (no real browser found)...")
+                    launch_kwargs = dict(
                         user_data_dir=profile_path,
                         headless=self.headless,
                         args=[
                             '--disable-blink-features=AutomationControlled',
-                            '--disable-dev-shm-usage',
                             '--no-first-run',
                             '--no-default-browser-check',
                         ],
                         ignore_default_args=['--enable-automation'],
                         viewport={'width': 1280, 'height': 800},
-                        user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                     )
+                    if exe:
+                        launch_kwargs['executable_path'] = exe
+                    browser = p.chromium.launch_persistent_context(**launch_kwargs)
                     print(f"[Detect] Browser launched, pages: {len(browser.pages)}")
                 elif self.browser == "firefox":
                     # Firefox uses a different approach
@@ -419,19 +409,17 @@ class BrowserDetector:
                         viewport={'width': 1280, 'height': 800},
                     )
                 else:
-                    # Chrome/Edge with stealth settings
-                    channel = "chrome" if self.browser == "chrome" else "msedge"
+                    # Chrome/Edge with stealth settings — use executable_path for reliability
+                    exe = _get_real_browser_exe()
                     browser = p.chromium.launch_persistent_context(
                         user_data_dir=profile_path,
-                        channel=channel,
+                        executable_path=exe,
                         headless=self.headless,
                         args=[
                             '--disable-blink-features=AutomationControlled',
-                            '--disable-dev-shm-usage',
                         ],
                         ignore_default_args=['--enable-automation'],
                         viewport={'width': 1280, 'height': 800},
-                        user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                     )
             except Exception as e:
                 error_msg = str(e)
@@ -458,12 +446,6 @@ class BrowserDetector:
                     raise
 
             try:
-                # Add stealth script to context (applies to all pages)
-                browser.add_init_script("""
-                    Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-                    Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
-                """)
-
                 # Create a new page for detection
                 page = browser.new_page()
                 print(f"[Detect] Created new page (total: {len(browser.pages)})")

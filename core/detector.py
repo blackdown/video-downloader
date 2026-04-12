@@ -42,6 +42,7 @@ class VimeoDetector:
     GETCOURSE_URL_PATTERN = r'gceuproxy\.com/api/playlist/master/([a-f0-9]+)/([a-f0-9]+)'
     # Cloudflare Stream (Skillshare): customer-*.cloudflarestream.com/JWT/manifest/video.m3u8
     CLOUDFLARE_STREAM_PATTERN = r'cloudflarestream\.com/(eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)/manifest/video\.m3u8'
+    MUX_URL_PATTERN = r'stream\.mux\.com/[^"\'\s?]+\.m3u8'
     
     def __init__(self, url: str, cookies=None):
         self.url = url
@@ -115,12 +116,26 @@ class VimeoDetector:
             self.video_type = VimeoType.PUBLIC
             return self.video_id, None
 
+        # Try Mux stream URL
+        if re.search(self.MUX_URL_PATTERN, self.url):
+            self.video_id = "direct_m3u8"
+            self.source = VideoSource.DIRECT_STREAM
+            self.video_type = VimeoType.PUBLIC
+            return self.video_id, None
+
         # Try direct CDN m3u8 URL (Vimeo CDN)
         if re.search(self.CDN_URL_PATTERN, self.url):
             self.video_id = "direct_m3u8"
             self.source = VideoSource.DIRECT_STREAM
             self.video_type = VimeoType.PUBLIC
             self.is_master_playlist = self._check_is_master_playlist()
+            return self.video_id, None
+
+        # Any other direct .m3u8 URL
+        if re.search(r'\.m3u8(\?|$)', self.url):
+            self.video_id = "direct_m3u8"
+            self.source = VideoSource.DIRECT_STREAM
+            self.video_type = VimeoType.PUBLIC
             return self.video_id, None
 
         return None, None
@@ -215,6 +230,8 @@ class WebpageScraper:
         (r'(https?://kinescope\.io/[a-f0-9-]+/media\.m3u8[^"\'\s]*)', VideoSource.KINESCOPE),
         # Cloudflare Stream (Skillshare): customer-*.cloudflarestream.com/JWT/manifest/video.m3u8
         (r'(https?://customer-[a-z0-9]+\.cloudflarestream\.com/eyJ[A-Za-z0-9_.-]+/manifest/video\.m3u8[^"\'\s]*)', VideoSource.SKILLSHARE),
+        # Mux: stream.mux.com/ID.m3u8?token=...
+        (r'(https?://stream\.mux\.com/[^"\'\s?]+\.m3u8[^"\'\s]*)', VideoSource.DIRECT_STREAM),
         # Vimeo player iframe
         (r'(https?://player\.vimeo\.com/video/\d+[^"\'\s]*)', VideoSource.VIMEO),
         # Vimeo CDN m3u8

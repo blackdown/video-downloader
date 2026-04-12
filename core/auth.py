@@ -9,6 +9,9 @@ import sqlite3
 import subprocess
 import sys
 import json
+import base64
+import ctypes
+import ctypes.wintypes
 from typing import Optional, Dict
 from pathlib import Path
 
@@ -17,6 +20,138 @@ try:
     HAS_BROWSER_COOKIE3 = True
 except ImportError:
     HAS_BROWSER_COOKIE3 = False
+
+
+def _dpapi_decrypt(data: bytes) -> bytes:
+    """Decrypt data using Windows DPAPI (no pywin32 required)."""
+    class DATA_BLOB(ctypes.Structure):
+        _fields_ = [('cbData', ctypes.wintypes.DWORD),
+                    ('pbData', ctypes.POINTER(ctypes.c_char))]
+    p = ctypes.create_string_buffer(data, len(data))
+    blobin = DATA_BLOB(len(data), p)
+    blobout = DATA_BLOB()
+    if not ctypes.windll.crypt32.CryptUnprotectData(
+            ctypes.byref(blobin), None, None, None, None, 0, ctypes.byref(blobout)):
+        raise ctypes.WinError()
+    result = ctypes.string_at(blobout.pbData, blobout.cbData)
+    ctypes.windll.kernel32.LocalFree(blobout.pbData)
+    return result
+
+
+def extract_detection_profile_cookies(domain: Optional[str] = None) -> Dict[str, str]:
+    """
+    Extract cookies directly from the dedicated detection profile.
+    Works even when Chrome is running (uses a temp copy of the DB).
+    """
+    try:
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    except ImportError:
+        print("Warning: cryptography package not installed, cannot extract detection profile cookies")
+        return {}
+
+    try:
+        from core.browser_detect import get_detection_profile_dir, is_detection_profile_setup
+    except ImportError:
+        try:
+            from .browser_detect import get_detection_profile_dir, is_detection_profile_setup
+        except ImportError:
+            return {}
+
+    if not is_detection_profile_setup():
+        print(f"[Cookies] Detection profile not set up yet")
+        return {}
+
+    profile_dir = get_detection_profile_dir()
+    print(f"[Cookies] Extracting from detection profile for domain: {domain}")
+    local_state_path = profile_dir / 'Local State'
+
+    # Chrome stores cookies in Default/Cookies or Default/Network/Cookies
+    cookies_candidates = [
+        profile_dir / 'Default' / 'Network' / 'Cookies',
+        profile_dir / 'Default' / 'Cookies',
+    ]
+    cookies_path = next((p for p in cookies_candidates if p.exists()), None)
+
+    if not local_state_path.exists() or not cookies_path:
+        print(f"[Cookies] Detection profile cookies not found at {profile_dir}")
+        return {}
+
+    try:
+        # Get AES key from Local State (encrypted with DPAPI)
+        with open(local_state_path, encoding='utf-8') as f:
+            local_state = json.load(f)
+        encrypted_key_b64 = local_state.get('os_crypt', {}).get('encrypted_key', '')
+        if not encrypted_key_b64:
+            return {}
+        encrypted_key = base64.b64decode(encrypted_key_b64)
+        # First 5 bytes are the literal "DPAPI" prefix
+        aes_key = _dpapi_decrypt(encrypted_key[5:])
+
+        # Copy DB to temp location to avoid SQLite lock conflicts
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.db') as tf:
+            temp_db = tf.name
+        shutil.copy2(str(cookies_path), temp_db)
+
+        cookies: Dict[str, str] = {}
+        total = matched = decrypted = 0
+        last_err = None
+        try:
+            conn = sqlite3.connect(f'file:{temp_db}?mode=ro', uri=True)
+            cursor = conn.cursor()
+            cursor.execute("SELECT host_key, name, encrypted_value FROM cookies")
+            rows = cursor.fetchall()
+            total = len(rows)
+            for host, name, encrypted_value in rows:
+                if domain:
+                    cookie_host = host.lstrip('.')
+                    if not (domain == cookie_host or domain.endswith('.' + cookie_host)):
+                        continue
+                matched += 1
+                try:
+                    ev = bytes(encrypted_value)
+                    if ev[:3] in (b'v10', b'v11', b'v20'):
+                        iv = ev[3:15]
+                        payload = ev[15:]
+                        value = AESGCM(aes_key).decrypt(iv, payload, None).decode('utf-8')
+                    elif os.name == 'nt' and ev:
+                        value = _dpapi_decrypt(ev).decode('utf-8')
+                    else:
+                        continue
+                    cookies[name] = value
+                    decrypted += 1
+                except Exception as e:
+                    last_err = e
+                    continue
+            conn.close()
+        finally:
+            try:
+                os.unlink(temp_db)
+            except Exception:
+                pass
+
+        print(f"[Cookies] DB: {total} total, {matched} matched domain, {decrypted} decrypted" +
+              (f" (last decrypt error: {last_err})" if last_err and decrypted == 0 else ""))
+        return cookies
+
+    except Exception as e:
+        print(f"[Cookies] Detection profile extraction failed: {e}")
+        return {}
+
+
+def write_cookies_to_netscape_file(cookies: Dict[str, str], domain: str) -> Optional[str]:
+    """Write cookies dict to a Netscape-format temp file for yt-dlp --cookies."""
+    if not cookies:
+        return None
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as f:
+            f.write("# Netscape HTTP Cookie File\n")
+            for name, value in cookies.items():
+                # domain  include_subdomains  path  secure  expiry  name  value
+                f.write(f".{domain}\tTRUE\t/\tTRUE\t2147483647\t{name}\t{value}\n")
+            return f.name
+    except Exception as e:
+        print(f"[Cookies] Failed to write cookies file: {e}")
+        return None
 
 
 class CookieManager:
@@ -82,8 +217,25 @@ class CookieManager:
                 self._cookies = cookies
                 return cookies
 
+        # Last resort: try the dedicated detection profile
+        if domain:
+            cookies = extract_detection_profile_cookies(domain)
+            if cookies:
+                self._cookies = cookies
+                return cookies
+
         print("Warning: Could not extract cookies")
         return {}
+
+    def get_detection_profile_cookies_file(self, domain: str) -> Optional[str]:
+        """
+        Write detection profile cookies for a domain to a temp Netscape cookies file.
+        Returns the file path (caller is responsible for cleanup), or None if unavailable.
+        """
+        cookies = extract_detection_profile_cookies(domain)
+        if not cookies:
+            return None
+        return write_cookies_to_netscape_file(cookies, domain)
 
     def _extract_with_ytdlp(self, domain: Optional[str] = None) -> Dict:
         """Extract cookies using yt-dlp (handles Chrome encryption on Windows)."""

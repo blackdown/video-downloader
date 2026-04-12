@@ -1,197 +1,168 @@
 # Video Downloader
 
-Multi-platform video downloader with automatic detection, batch downloads, and rich progress display.
+Multi-platform video downloader with a GUI, automatic platform detection, browser-based video scanning, and authenticated site support.
 
 ## Supported Platforms
 
-| Platform | URL Examples |
-|----------|--------------|
-| **YouTube** | `youtube.com/watch?v=ID`, `youtu.be/ID`, `/shorts/`, `/embed/` |
-| **Vimeo** | `vimeo.com/ID`, `player.vimeo.com/video/ID` |
-| **Kinescope** | `kinescope.io/ID/media.m3u8?...` |
-| **GetCourse** | `gceuproxy.com/api/playlist/master/...` |
+| Platform | Notes |
+|----------|-------|
+| **YouTube** | Public videos |
+| **Vimeo** | Public, unlisted, password-protected, embed-only |
+| **Kinescope** | HLS master playlists |
+| **GetCourse** | HLS proxy streams |
+| **Skillshare** | Cloudflare Stream (requires login profile) |
+| **Patreon / Mux** | `stream.mux.com` — use Source page URL field |
 | **Direct HLS** | Any `.m3u8` stream URL |
 
-## Features
+## GUI Usage
 
-- Automatic platform and video type detection
-- **Batch downloads** - queue multiple URLs from a file
-- Browser cookie extraction (Chrome, Firefox, Edge)
-- Password-protected video support (Vimeo)
-- Video-only stream detection with warnings
-- Parallel fragment downloads (16 or 32 in fast mode)
-- Optional aria2c integration for maximum speed
-- Rich progress bar with speed and ETA
-- Clean MP4 output with proper metadata
+Run the GUI:
+
+```bash
+python main.py
+```
+
+Or use the bundled `video_dl.exe` on Windows.
+
+### Adding a URL
+
+Paste a video URL into the URL field and click **+ Add** (or press Enter).
+
+For direct stream URLs from sites like Patreon that restrict playback by origin, also paste the page you found the video on into the **Source page URL** field — this is sent as the HTTP `Referer` header.
+
+### Authenticated Sites (Skillshare, Patreon, etc.)
+
+1. Go to **Settings** and click **Setup Profile** under the Login Profile section.
+2. A Chrome window opens — log in to any sites you want to download from.
+3. Close the browser when done.
+4. Downloads will now use the saved session cookies automatically.
+
+The profile is stored at `%LOCALAPPDATA%\VideoDownloader\detection-profile` and persists between sessions.
+
+### Detect Videos from a Page
+
+Click **Detect Videos** to open the browser scanner:
+
+1. Enter a page URL (e.g., a Skillshare class page).
+2. Click **Detect** — Chrome opens and scans network requests for video streams.
+3. Check the videos found and click **Add to Queue**.
+
+This works for any site where the video URL isn't visible in the page source.
+
+### Queue Controls
+
+| Button | Action |
+|--------|--------|
+| **Start** | Start/resume downloading |
+| **Pause** | Stop starting new downloads (current download finishes) |
+| **Cancel** | Cancel all active downloads |
+| **Clear Done** | Remove completed/error/cancelled items |
+| **Open Folder** | Open the output folder in Explorer |
+
+### Batch Files
+
+Click **Batch File** to load a `.txt` file with one URL per line. Lines starting with `#` are ignored.
+
+---
+
+## CLI Usage
+
+```bash
+python video_dl.py "URL" [OPTIONS]
+```
+
+### Options
+
+```
+  -B, --batch TEXT       Batch file with URLs (one per line)
+  -p, --password TEXT    Password for password-protected Vimeo videos
+  -o, --output TEXT      Output directory (default: current directory)
+  -n, --name TEXT        Output filename (without extension)
+  -b, --browser TEXT     Browser for cookies (chrome/firefox/edge)
+  --profile TEXT         Browser profile name (e.g. "Profile 1")
+  --aria2                Use aria2c for faster downloads
+  -f, --fast             32 concurrent fragments instead of 16
+  --dry-run              Print command without running it
+  -F, --list-formats     List available formats
+  --no-cookies           Skip cookie extraction
+  --no-progress          Disable rich progress bar
+```
+
+---
 
 ## Installation
 
 ### Windows: Standalone Executable
 
-Download `video_dl.exe` from the [Releases](../../releases) page. No Python required.
+Download `video_dl.exe` from the [Releases](../../releases) page.
 
-You still need to install the external tools:
+Install external tools:
 ```powershell
 winget install yt-dlp
 winget install ffmpeg
 ```
 
-### macOS / Linux: Run from Source
+### Run from Source
 
-1. Install external tools:
+1. Install external tools (see above or use your package manager).
 
-**macOS:**
+2. Create a virtual environment and install dependencies:
 ```bash
-brew install yt-dlp ffmpeg python
-```
+python -m venv .venv
+.venv\Scripts\activate       # Windows
+source .venv/bin/activate    # macOS/Linux
 
-**Linux:**
-```bash
-sudo apt install yt-dlp ffmpeg python3 python3-pip
-```
-
-2. Install Python dependencies:
-```bash
 pip install -r requirements.txt
+playwright install chromium
 ```
 
-3. Run with Python:
+3. Run:
 ```bash
-python video_dl.py "https://..." --no-cookies
+python main.py        # GUI
+python video_dl.py    # CLI
 ```
 
-## Usage
-
-**Windows:** Use `video_dl.exe`
-**macOS/Linux:** Use `python video_dl.py`
-
-### Single Video Download
-
-```bash
-# YouTube
-video_dl.exe "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-
-# Vimeo (public)
-video_dl.exe https://vimeo.com/123456789
-
-# Vimeo (password-protected)
-video_dl.exe https://vimeo.com/123456789 --password mypass
-
-# Direct stream URL
-video_dl.exe "https://example.com/video.m3u8" --no-cookies
-
-# Fast mode (32 concurrent fragments)
-video_dl.exe "https://..." --fast
-```
-
-### Batch Download
-
-Create a text file with URLs (one per line):
-
-**urls.txt:**
-```
-# My video queue
-https://www.youtube.com/watch?v=abc123
-https://vimeo.com/123456789
-
-# Comments start with #, empty lines ignored
-https://kinescope.io/abc.../media.m3u8?...
-```
-
-Download all:
-```bash
-video_dl.exe --batch urls.txt --no-cookies --fast
-```
-
-### All Options
-
-```
-Usage: video_dl.exe [OPTIONS] [URL]
-
-Options:
-  -B, --batch TEXT       Batch file with URLs (one per line)
-  -p, --password TEXT    Password for password-protected videos
-  -o, --output TEXT      Output directory (default: current directory)
-  -n, --name TEXT        Output filename (without extension)
-  -b, --browser TEXT     Browser to extract cookies from (chrome/firefox/edge)
-  --profile TEXT         Browser profile name (e.g., "Profile 1", "Default")
-  --aria2                Use aria2c for faster downloads
-  -f, --fast             Fast mode - 32 concurrent fragment downloads
-  --dry-run              Show command without executing
-  -F, --list-formats     List available formats without downloading
-  --no-cookies           Skip cookie extraction (for direct URLs)
-  --no-progress          Disable rich progress bar
-  --help                 Show this message and exit
-```
-
-## Important: Video-Only Stream URLs
-
-Some platforms (Kinescope, Vimeo CDN) separate video and audio into different streams. The tool will warn you if it detects a video-only URL:
-
-```
-WARNING: This is a video-only stream URL (type=video)!
-  Audio will be missing. You need the master playlist URL instead.
-```
-
-**How to identify URL types:**
-
-| URL Type | Pattern | Audio? |
-|----------|---------|--------|
-| Master (use this!) | `/master/` or `/primary/` + `playlist.m3u8` | Yes |
-| Video-only | `type=video` or `st=video` in URL | **NO** |
-
-**Solution:** Go back to the source and find the master playlist URL, or look for a URL without `type=video`.
-
-## How It Works
-
-1. **URL Analysis**: Detects platform and extracts video ID
-2. **Type Detection**: Checks for password protection, video-only streams
-3. **Authentication**: Extracts cookies from browser if needed
-4. **Download**: Uses yt-dlp with optimal settings for each platform
-5. **Post-processing**: Merges audio/video into clean MP4
+---
 
 ## Troubleshooting
 
+### 403 Forbidden on Mux/Patreon streams
+The stream URL has an origin restriction. Paste the Patreon post URL into the **Source page URL** field — this sends it as the HTTP `Referer`.
+
 ### No audio in downloaded video
-You're using a video-only stream URL. Use the master playlist URL instead. See section above.
+You have a video-only stream URL. You need the master playlist URL (usually contains `/primary/` and ends with `playlist.m3u8`).
 
-### "Could not extract cookies"
-Use `--no-cookies` for direct stream URLs:
-```bash
-video_dl.exe "YOUR_URL" --no-cookies
-```
+### Site not logging in through Setup Profile
+Some sites detect automation. Close the profile browser fully between sessions. The Setup Profile button opens a plain Chrome window (no automation flags).
 
-### Progress bar not updating
-Try `--no-progress` to see raw yt-dlp output and diagnose issues.
+### "Could not extract cookies" / authentication failures
+Set up the login profile via Settings → Setup Profile. Downloads will use the saved session instead of live browser cookies.
 
-### "URL expired" or "403 Forbidden"
-Direct stream URLs expire. Get a fresh URL from the source.
+### URL expired or instant 403
+Direct stream URLs expire. Get a fresh URL from the source page.
 
-## Building from Source
-
-To build the standalone executable:
-
-```bash
-pip install pyinstaller
-pyinstaller --onefile --name video_dl --console video_dl.py
-```
-
-The executable will be created in the `dist/` folder.
+---
 
 ## Project Structure
 
 ```
 video-downloader/
-├── video_dl.py          # Main CLI entry point
+├── main.py              # GUI entry point
+├── video_dl.py          # CLI entry point
 ├── core/
-│   ├── detector.py      # URL/platform detection
+│   ├── detector.py      # URL and platform detection
 │   ├── downloader.py    # Download orchestration
 │   ├── commands.py      # yt-dlp command building
-│   └── auth.py          # Cookie handling
-├── requirements.txt
-└── README.md
+│   ├── auth.py          # Cookie extraction and decryption
+│   └── browser_detect.py # Playwright-based video detection
+├── gui/
+│   ├── app.py           # Main window
+│   ├── managers/        # Queue, workers, events
+│   ├── models/          # Settings, queue item dataclasses
+│   └── widgets/         # UI components
+└── requirements.txt
 ```
 
 ## License
 
-MIT License - Feel free to use and modify as needed.
+MIT License

@@ -36,6 +36,7 @@ class QueueItem:
     is_video_only: bool = False
     output_path: Optional[str] = None
     custom_filename: Optional[str] = None  # User-specified filename (without extension)
+    referer_url: Optional[str] = None  # Source page URL used as HTTP Referer
 
     def get_platform_short(self) -> str:
         """Get short platform identifier for display."""
